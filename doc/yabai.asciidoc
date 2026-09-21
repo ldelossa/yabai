@@ -119,6 +119,69 @@ EASING      := ease_in_sine  | ease_out_sine  | ease_in_out_sine  |
 Domains
 -------
 
+Action
+~~~~~~
+
+The action domain exposes Yabai's native command palette and stable action identifiers suitable for skhd bindings.
+
+Rules, signals, and raw queries are intentionally not included in the palette because they are better suited to configuration files or terminal output.
+
+General Syntax
+^^^^^^^^^^^^^^
+
+yabai -m action '<COMMAND>'
+
+COMMAND
+^^^^^^^
+
+*--show*::
+    Show the native command palette on the display containing the pointer. +
+    Type to filter by title, action identifier, category, or syntax. +
+    Use the arrow keys to navigate and Return to select an action. +
+    Actions requiring an argument transition to a text-input view. +
+    Escape returns from argument or confirmation views to the action list, and closes the palette from the action list. +
+    Destructive palette actions require confirmation.
+
+*--run* '<ACTION_ID>' ['<ARGUMENT>']::
+    Execute an action directly by its stable identifier. +
+    Quote arguments containing spaces so they arrive as a single argument. +
+    Direct low-level execution returns the underlying IPC command output and error status. +
+    Native workflow actions open their interactive view when required. +
+    Destructive actions invoked directly do not show the palette confirmation view.
+
+*--list*::
+    Output the action catalog as JSON, including identifiers, titles, categories, action kinds, argument requirements, syntax, and destructive flags.
+
+ACTION_ID
+^^^^^^^^^
+
+Display actions::
+    'display.focus', 'display.space', 'display.label'
+
+Space actions::
+    'space.choose', 'space.relabel', 'space.layout-cycle', 'space.focus', 'space.switch', 'space.create', 'space.destroy', 'space.move', 'space.swap', 'space.display', 'space.equalize', 'space.balance', 'space.mirror', 'space.rotate', 'space.padding', 'space.gap', 'space.toggle', 'space.layout', 'space.label'
+
+Native space workflows::
+    'space.choose' opens a searchable list of spaces and creates, labels, and focuses a space from unmatched search text. +
+    'space.relabel' prompts with the focused space's current label and clears the label when submitted empty. +
+    'space.layout-cycle' cycles the focused space through stack, bsp, and float layouts.
+
+Window actions::
+    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.stack-selector-anchor'
+
+Runtime-setting actions::
+    'config.mouse-follows-focus', 'config.focus-follows-mouse', 'config.stack-selector', 'config.stack-selector-anchor', 'config.skip-window-focus-animation', 'config.layout', 'config.split-type', 'config.split-ratio', 'config.top-padding', 'config.bottom-padding', 'config.left-padding', 'config.right-padding', 'config.window-gap', 'config.auto-balance'
+
+SKHD EXAMPLES
+^^^^^^^^^^^^^
+
+----
+alt - a         : yabai -m action --show
+alt - w         : yabai -m action --run space.choose
+alt - r         : yabai -m action --run space.relabel
+alt - o         : yabai -m action --run space.layout-cycle
+----
+
 Config
 ~~~~~~
 

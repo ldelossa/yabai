@@ -975,6 +975,7 @@ static EVENT_HANDLER(SLS_SPACE_CREATED)
     if (type == 0 || type == 4) {
         debug("%s: %lld, %d\n", __FUNCTION__, sid, type);
         space_manager_find_view(&g_space_manager, sid);
+        space_workflow_handle_space_created(sid);
         event_signal_push(SIGNAL_SPACE_CREATED, context);
     }
 }
@@ -1659,6 +1660,16 @@ static EVENT_HANDLER(STACK_SELECTOR_ANCHOR_CHANGED)
     }
 
     stack_selector_update_node(node);
+}
+
+static EVENT_HANDLER(COMMAND_PALETTE_ACTION)
+{
+    command_palette_execute_request(context);
+}
+
+static EVENT_HANDLER(SPACE_WORKFLOW_REQUEST)
+{
+    space_workflow_handle_request(context);
 }
 
 static EVENT_HANDLER(DAEMON_MESSAGE)

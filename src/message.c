@@ -18,6 +18,7 @@ extern bool g_verbose;
 #define DOMAIN_QUERY   "query"
 #define DOMAIN_RULE    "rule"
 #define DOMAIN_SIGNAL  "signal"
+#define DOMAIN_ACTION  "action"
 
 /* --------------------------------DOMAIN CONFIG-------------------------------- */
 #define COMMAND_CONFIG_DEBUG_OUTPUT          "debug_output"
@@ -3065,6 +3066,8 @@ void handle_message(FILE *rsp, char *message)
         handle_domain_rule(rsp, domain, message);
     } else if (token_equals(domain, DOMAIN_SIGNAL)) {
         handle_domain_signal(rsp, domain, message);
+    } else if (token_equals(domain, DOMAIN_ACTION)) {
+        command_palette_handle_message(rsp, message);
     } else {
         daemon_fail(rsp, "unknown domain '%.*s'\n", domain.length, domain.text);
     }
