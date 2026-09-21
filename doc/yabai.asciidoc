@@ -259,6 +259,11 @@ Global Settings
     The focused workspace is always shown first. +
     'index' sorts by mission-control index, 'alphabetical' by label, and 'creation' by space creation order.
 
+*space_cleaner* ['<BOOL_SEL>']::
+    Automatically destroy empty, non-visible spaces. +
+    Runs when a window is destroyed or moved to another space, and when the visible space changes. +
+    The visible space and the last remaining user space on each display are never destroyed.
+
 *skip_window_focus_animation* ['<BOOL_SEL>']::
     Bypass macOS space animation when an application or window on an inactive space is focused. +
     You should only enable this if you do NOT use the scripting addition. +

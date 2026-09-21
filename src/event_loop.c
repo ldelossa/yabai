@@ -633,6 +633,8 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
         update_window_notifications();
     }
+
+    space_cleaner_run();
 }
 
 static EVENT_HANDLER(WINDOW_FOCUSED)
@@ -956,6 +958,8 @@ static EVENT_HANDLER(SLS_WINDOW_DESTROYED)
     uint32_t wid = (uint64_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, wid);
 
+    space_cleaner_run();
+
     struct window *window = window_manager_find_window(&g_window_manager, wid);
     if (!window) return;
 
@@ -977,6 +981,7 @@ static EVENT_HANDLER(SLS_SPACE_CREATED)
         space_manager_find_view(&g_space_manager, sid);
         space_workflow_handle_space_created(sid);
         event_signal_push(SIGNAL_SPACE_CREATED, context);
+        status_island_refresh();
     }
 }
 
@@ -991,6 +996,7 @@ static EVENT_HANDLER(SLS_SPACE_DESTROYED)
         view_destroy(view);
         free(view);
         event_signal_push(SIGNAL_SPACE_DESTROYED, context);
+        status_island_refresh();
     }
 }
 
@@ -1031,6 +1037,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
     stack_selector_update_all();
     status_island_refresh();
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
+    space_cleaner_run();
 }
 
 static EVENT_HANDLER(DISPLAY_CHANGED)
