@@ -175,6 +175,16 @@ Global Settings
 *window_zoom_persist* ['<BOOL_SEL>']::
     Windows will keep their zoom-state through layout changes.
 
+*stack_selector* ['<BOOL_SEL>']::
+    Show a clickable application-icon selector for every window stack. +
+    Hovering an inactive window icon displays a window preview. +
+    Right-clicking the selector opens a visual anchor grid for setting that stack's anchor or restoring the global default. +
+    Applies to both stack layout and stacked leaf-nodes in bsp layout.
+
+*stack_selector_anchor* ['<STACK_SELECTOR_ANCHOR>']::
+    Set the default anchor used by stack selectors. +
+    Valid anchors are: vertical-top-left, vertical-center-left, vertical-bottom-left, vertical-top-right, vertical-center-right, vertical-bottom-right, horizontal-left-top, horizontal-center-top, horizontal-right-top, horizontal-left-bottom, horizontal-center-bottom, horizontal-right-bottom.
+
 *skip_window_focus_animation* ['<BOOL_SEL>']::
     Bypass macOS space animation when an application or window on an inactive space is focused. +
     You should only enable this if you do NOT use the scripting addition. +
@@ -403,6 +413,11 @@ COMMAND
 *--stack* '<WINDOW_SEL>'::
     Stack the given window on top of the selected window. +
     Any kind of warp operation performed on a stacked window will unstack it.
+
+*--stack-selector-anchor* ['<STACK_SELECTOR_ANCHOR>|next|prev|default']::
+    Set or query the stack-selector anchor for the selected window's stack. +
+    The values 'next' and 'prev' cycle through all anchor ports. +
+    The value 'default' removes the per-stack override and follows the global 'stack_selector_anchor' setting.
 
 *--insert* '<DIR_SEL>|stack'::
     Set the splitting mode of the selected window. +

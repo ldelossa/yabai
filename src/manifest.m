@@ -76,9 +76,11 @@
 #include "space_manager.h"
 #include "window_manager.h"
 #include "mouse_handler.h"
+#include "stack_selector.h"
 
 #include "sa.m"
 #include "mission_control.c"
+#include "stack_selector.m"
 #include "event_loop.c"
 #include "event_signal.c"
 #include "workspace.m"

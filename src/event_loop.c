@@ -68,6 +68,8 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
 
         break;
     }
+
+    stack_selector_update_node(node);
 }
 
 #pragma clang diagnostic push
@@ -1025,6 +1027,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
         }
     }
 
+    stack_selector_update_all();
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
 }
 
@@ -1077,6 +1080,7 @@ static EVENT_HANDLER(DISPLAY_CHANGED)
         }
     }
 
+    stack_selector_update_all();
     event_signal_push(SIGNAL_DISPLAY_CHANGED, NULL);
 }
 
@@ -1086,6 +1090,7 @@ static EVENT_HANDLER(DISPLAY_ADDED)
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_handle_display_add(&g_space_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, did);
+    stack_selector_update_all();
     event_signal_push(SIGNAL_DISPLAY_ADDED, context);
 }
 
@@ -1095,6 +1100,7 @@ static EVENT_HANDLER(DISPLAY_REMOVED)
     debug("%s: %d\n", __FUNCTION__, did);
     display_manager_remove_label_for_display(&g_display_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, display_manager_main_display_id());
+    stack_selector_update_all();
     event_signal_push(SIGNAL_DISPLAY_REMOVED, context);
 }
 
@@ -1452,6 +1458,7 @@ out:
 static EVENT_HANDLER(MISSION_CONTROL_SHOW_ALL_WINDOWS)
 {
     debug("%s:\n", __FUNCTION__);
+    stack_selector_hide_all();
     g_mission_control_mode = MISSION_CONTROL_MODE_SHOW_ALL_WINDOWS;
     event_signal_push(SIGNAL_MISSION_CONTROL_ENTER, (void*)(uintptr_t)g_mission_control_mode);
 }
@@ -1459,6 +1466,7 @@ static EVENT_HANDLER(MISSION_CONTROL_SHOW_ALL_WINDOWS)
 static EVENT_HANDLER(MISSION_CONTROL_SHOW_FRONT_WINDOWS)
 {
     debug("%s:\n", __FUNCTION__);
+    stack_selector_hide_all();
     g_mission_control_mode = MISSION_CONTROL_MODE_SHOW_FRONT_WINDOWS;
     event_signal_push(SIGNAL_MISSION_CONTROL_ENTER, (void*)(uintptr_t)g_mission_control_mode);
 }
@@ -1466,6 +1474,7 @@ static EVENT_HANDLER(MISSION_CONTROL_SHOW_FRONT_WINDOWS)
 static EVENT_HANDLER(MISSION_CONTROL_SHOW_DESKTOP)
 {
     debug("%s:\n", __FUNCTION__);
+    stack_selector_hide_all();
     g_mission_control_mode = MISSION_CONTROL_MODE_SHOW_DESKTOP;
     event_signal_push(SIGNAL_MISSION_CONTROL_ENTER, (void*)(uintptr_t)g_mission_control_mode);
 }
@@ -1473,6 +1482,7 @@ static EVENT_HANDLER(MISSION_CONTROL_SHOW_DESKTOP)
 static EVENT_HANDLER(MISSION_CONTROL_ENTER)
 {
     debug("%s:\n", __FUNCTION__);
+    stack_selector_hide_all();
     g_mission_control_mode = MISSION_CONTROL_MODE_SHOW;
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 0.1f * NSEC_PER_SEC), dispatch_get_main_queue(), ^{
@@ -1540,6 +1550,7 @@ static EVENT_HANDLER(MISSION_CONTROL_EXIT)
 
     event_signal_push(SIGNAL_MISSION_CONTROL_EXIT, (void*)(uintptr_t)g_mission_control_mode);
     g_mission_control_mode = MISSION_CONTROL_MODE_INACTIVE;
+    stack_selector_update_all();
 }
 
 static EVENT_HANDLER(DOCK_DID_RESTART)
@@ -1609,6 +1620,45 @@ static EVENT_HANDLER(SYSTEM_WOKE)
     }
 
     event_signal_push(SIGNAL_SYSTEM_WOKE, NULL);
+}
+
+static EVENT_HANDLER(STACK_SELECTOR_SELECTED)
+{
+    uint32_t window_id = (uint32_t)(uintptr_t)context;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window) return;
+
+    struct view *view = window_manager_find_managed_window(&g_window_manager, window);
+    if (!view || !space_is_visible(view->sid)) return;
+
+    struct window_node *node = view_find_window_node(view, window_id);
+    if (!node || node->window_count <= 1) return;
+
+    window_manager_focus_window_with_raise(&window->application->psn, window->id, window->ref);
+    stack_selector_update_node_with_active_window(node, window_id);
+}
+
+static EVENT_HANDLER(STACK_SELECTOR_ANCHOR_CHANGED)
+{
+    uint32_t window_id = (uint32_t)(uintptr_t)context;
+    enum stack_selector_anchor anchor = (enum stack_selector_anchor)param1;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window) return;
+
+    struct view *view = window_manager_find_managed_window(&g_window_manager, window);
+    struct window_node *node = view ? view_find_window_node(view, window_id) : NULL;
+    if (!node || node->window_count <= 1) return;
+
+    if (anchor == STACK_SELECTOR_ANCHOR_COUNT) {
+        node->stack_selector_anchor_override = false;
+    } else if (anchor >= 0 && anchor < STACK_SELECTOR_ANCHOR_COUNT) {
+        node->stack_selector_anchor = anchor;
+        node->stack_selector_anchor_override = true;
+    } else {
+        return;
+    }
+
+    stack_selector_update_node(node);
 }
 
 static EVENT_HANDLER(DAEMON_MESSAGE)

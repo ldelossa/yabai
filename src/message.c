@@ -28,6 +28,8 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_WINDOW_PLACEMENT      "window_placement"
 #define COMMAND_CONFIG_WINDOW_INSERT_POINT   "window_insertion_point"
 #define COMMAND_CONFIG_WINDOW_ZOOM_PERSIST   "window_zoom_persist"
+#define COMMAND_CONFIG_STACK_SELECTOR        "stack_selector"
+#define COMMAND_CONFIG_STACK_SELECTOR_ANCHOR "stack_selector_anchor"
 #define COMMAND_CONFIG_OPACITY               "window_opacity"
 #define COMMAND_CONFIG_OPACITY_DURATION      "window_opacity_duration"
 #define COMMAND_CONFIG_ANIMATION_DURATION    "window_animation_duration"
@@ -147,7 +149,8 @@ extern bool g_verbose;
 #define COMMAND_WINDOW_RAISE      "--raise"
 #define COMMAND_WINDOW_LOWER      "--lower"
 #define COMMAND_WINDOW_TOGGLE     "--toggle"
-#define COMMAND_WINDOW_SCRATCHPAD "--scratchpad"
+#define COMMAND_WINDOW_SCRATCHPAD           "--scratchpad"
+#define COMMAND_WINDOW_STACK_SELECTOR_ANCHOR "--stack-selector-anchor"
 
 #define ARGUMENT_WINDOW_SEL_LARGEST     "largest"
 #define ARGUMENT_WINDOW_SEL_SMALLEST    "smallest"
@@ -176,7 +179,10 @@ extern bool g_verbose;
 #define ARGUMENT_WINDOW_TOGGLE_EXPOSE   "expose"
 #define ARGUMENT_WINDOW_TOGGLE_PIP      "pip"
 
-#define ARGUMENT_WINDOW_SCRATCHPAD_RECOVER "recover"
+#define ARGUMENT_WINDOW_SCRATCHPAD_RECOVER       "recover"
+#define ARGUMENT_WINDOW_STACK_SELECTOR_NEXT      "next"
+#define ARGUMENT_WINDOW_STACK_SELECTOR_PREV      "prev"
+#define ARGUMENT_WINDOW_STACK_SELECTOR_DEFAULT   "default"
 /* ----------------------------------------------------------------------------- */
 
 /* --------------------------------DOMAIN QUERY--------------------------------- */
@@ -1263,6 +1269,34 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }
+        } else if (token_equals(command, COMMAND_CONFIG_STACK_SELECTOR)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", bool_str[g_stack_selector_enabled]);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_OFF)) {
+                stack_selector_set_enabled(false);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
+                stack_selector_set_enabled(true);
+            } else {
+                daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_STACK_SELECTOR_ANCHOR)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", g_stack_selector_anchor_str[g_stack_selector_default_anchor]);
+            } else {
+                bool found = false;
+                for (int i = 0; i < STACK_SELECTOR_ANCHOR_COUNT; ++i) {
+                    if (token_equals(value, g_stack_selector_anchor_str[i])) {
+                        stack_selector_set_default_anchor(i);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+                }
+            }
         } else if (token_equals(command, COMMAND_CONFIG_SKIP_SPACE_ANIMATION)) {
             struct token value = get_token(&message);
             if (!token_is_valid(value)) {
@@ -2204,6 +2238,44 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
                     daemon_fail(rsp, "cannot stack a window onto itself.\n");
                 }
             }
+        } else if (token_equals(command, COMMAND_WINDOW_STACK_SELECTOR_ANCHOR)) {
+            struct view *view = window_manager_find_managed_window(&g_window_manager, acting_window);
+            struct window_node *node = view ? view_find_window_node(view, acting_window->id) : NULL;
+            if (!node || node->window_count <= 1) {
+                daemon_fail(rsp, "the acting window is not in a window stack.\n");
+                continue;
+            }
+
+            struct token value = get_token(&message);
+            enum stack_selector_anchor effective_anchor = node->stack_selector_anchor_override
+                                                        ? node->stack_selector_anchor
+                                                        : g_stack_selector_default_anchor;
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", g_stack_selector_anchor_str[effective_anchor]);
+            } else if (token_equals(value, ARGUMENT_WINDOW_STACK_SELECTOR_NEXT)) {
+                node->stack_selector_anchor = (effective_anchor + 1) % STACK_SELECTOR_ANCHOR_COUNT;
+                node->stack_selector_anchor_override = true;
+            } else if (token_equals(value, ARGUMENT_WINDOW_STACK_SELECTOR_PREV)) {
+                node->stack_selector_anchor = (effective_anchor + STACK_SELECTOR_ANCHOR_COUNT - 1) % STACK_SELECTOR_ANCHOR_COUNT;
+                node->stack_selector_anchor_override = true;
+            } else if (token_equals(value, ARGUMENT_WINDOW_STACK_SELECTOR_DEFAULT)) {
+                node->stack_selector_anchor_override = false;
+            } else {
+                bool found = false;
+                for (int i = 0; i < STACK_SELECTOR_ANCHOR_COUNT; ++i) {
+                    if (token_equals(value, g_stack_selector_anchor_str[i])) {
+                        node->stack_selector_anchor = i;
+                        node->stack_selector_anchor_override = true;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+                    continue;
+                }
+            }
+            stack_selector_update_node(node);
         } else if (token_equals(command, COMMAND_WINDOW_INSERT)) {
             struct selector selector = parse_insert_selector(rsp, &message);
             if (selector.did_parse && selector.dir) {

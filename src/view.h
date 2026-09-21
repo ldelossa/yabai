@@ -148,6 +148,23 @@ struct feedback_window
     CGContextRef context;
 };
 
+enum stack_selector_anchor
+{
+    STACK_SELECTOR_ANCHOR_VERTICAL_TOP_LEFT,
+    STACK_SELECTOR_ANCHOR_VERTICAL_CENTER_LEFT,
+    STACK_SELECTOR_ANCHOR_VERTICAL_BOTTOM_LEFT,
+    STACK_SELECTOR_ANCHOR_VERTICAL_TOP_RIGHT,
+    STACK_SELECTOR_ANCHOR_VERTICAL_CENTER_RIGHT,
+    STACK_SELECTOR_ANCHOR_VERTICAL_BOTTOM_RIGHT,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_LEFT_TOP,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_CENTER_TOP,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_RIGHT_TOP,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_LEFT_BOTTOM,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_CENTER_BOTTOM,
+    STACK_SELECTOR_ANCHOR_HORIZONTAL_RIGHT_BOTTOM,
+    STACK_SELECTOR_ANCHOR_COUNT,
+};
+
 #define NODE_MAX_WINDOW_COUNT 32
 struct window_node
 {
@@ -164,6 +181,9 @@ struct window_node
     enum window_node_child child;
     int insert_dir;
     struct feedback_window feedback_window;
+    uint64_t stack_selector_id;
+    enum stack_selector_anchor stack_selector_anchor;
+    bool stack_selector_anchor_override;
 };
 
 enum view_type

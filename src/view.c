@@ -276,6 +276,10 @@ static struct balance_node window_node_balance(struct window_node *node, uint32_
 
 static void window_node_split(struct view *view, struct window_node *node, struct window *window)
 {
+    enum stack_selector_anchor stack_selector_anchor = node->stack_selector_anchor;
+    bool stack_selector_anchor_override = node->stack_selector_anchor_override;
+    stack_selector_destroy_node(node);
+
     struct window_node *left = malloc(sizeof(struct window_node));
     memset(left, 0, sizeof(struct window_node));
 
@@ -295,6 +299,8 @@ static void window_node_split(struct view *view, struct window_node *node, struc
         memcpy(left->window_order, node->window_order, sizeof(uint32_t) * node->window_count);
         left->window_count = node->window_count;
         left->zoom = zoom;
+        left->stack_selector_anchor = stack_selector_anchor;
+        left->stack_selector_anchor_override = stack_selector_anchor_override;
 
         right->window_list[0] = window->id;
         right->window_order[0] = window->id;
@@ -304,6 +310,8 @@ static void window_node_split(struct view *view, struct window_node *node, struc
         memcpy(right->window_order, node->window_order, sizeof(uint32_t) * node->window_count);
         right->window_count = node->window_count;
         right->zoom = zoom;
+        right->stack_selector_anchor = stack_selector_anchor;
+        right->stack_selector_anchor_override = stack_selector_anchor_override;
 
         left->window_list[0] = window->id;
         left->window_order[0] = window->id;
@@ -314,6 +322,7 @@ static void window_node_split(struct view *view, struct window_node *node, struc
     right->parent = node;
 
     node->window_count = 0;
+    node->stack_selector_anchor_override = false;
     node->left  = left;
     node->right = right;
     node->zoom  = NULL;
@@ -342,6 +351,7 @@ static void window_node_destroy(struct window_node *node)
     }
 
     insert_feedback_destroy(node);
+    stack_selector_destroy_node(node);
     free(node);
 }
 
@@ -358,6 +368,8 @@ static void window_node_clear_zoom(struct window_node *node)
 void window_node_capture_windows(struct window_node *node, struct window_capture **window_list)
 {
     if (window_node_is_leaf(node)) {
+        stack_selector_update_node(node);
+
         for (int i = 0; i < node->window_count; ++i) {
             struct window *window = window_manager_find_window(&g_window_manager, node->window_list[i]);
             if (window) {
@@ -401,6 +413,8 @@ void window_node_swap_window_list(struct window_node *a_node, struct window_node
     uint32_t tmp_window_list[NODE_MAX_WINDOW_COUNT];
     uint32_t tmp_window_order[NODE_MAX_WINDOW_COUNT];
     uint32_t tmp_window_count;
+    enum stack_selector_anchor tmp_stack_selector_anchor = a_node->stack_selector_anchor;
+    bool tmp_stack_selector_anchor_override = a_node->stack_selector_anchor_override;
 
     memcpy(tmp_window_list, a_node->window_list, sizeof(uint32_t) * a_node->window_count);
     memcpy(tmp_window_order, a_node->window_order, sizeof(uint32_t) * a_node->window_count);
@@ -409,10 +423,14 @@ void window_node_swap_window_list(struct window_node *a_node, struct window_node
     memcpy(a_node->window_list, b_node->window_list, sizeof(uint32_t) * b_node->window_count);
     memcpy(a_node->window_order, b_node->window_order, sizeof(uint32_t) * b_node->window_count);
     a_node->window_count = b_node->window_count;
+    a_node->stack_selector_anchor = b_node->stack_selector_anchor;
+    a_node->stack_selector_anchor_override = b_node->stack_selector_anchor_override;
 
     memcpy(b_node->window_list, tmp_window_list, sizeof(uint32_t) * tmp_window_count);
     memcpy(b_node->window_order, tmp_window_order, sizeof(uint32_t) * tmp_window_count);
     b_node->window_count = tmp_window_count;
+    b_node->stack_selector_anchor = tmp_stack_selector_anchor;
+    b_node->stack_selector_anchor_override = tmp_stack_selector_anchor_override;
 
     a_node->zoom = NULL;
     b_node->zoom = NULL;
@@ -647,12 +665,14 @@ struct window_node *view_remove_window_node(struct view *view, struct window *wi
             view->insertion_point = node->window_order[0];
         }
 
+        stack_selector_update_node(node);
         return NULL;
     }
 
     if (node == view->root) {
         view->insertion_point = 0;
         insert_feedback_destroy(node);
+        stack_selector_destroy_node(node);
         memset(node, 0, sizeof(struct window_node));
         view_update(view);
         return NULL;
@@ -667,6 +687,8 @@ struct window_node *view_remove_window_node(struct view *view, struct window *wi
     memcpy(parent->window_list, child->window_list, sizeof(uint32_t) * child->window_count);
     memcpy(parent->window_order, child->window_order, sizeof(uint32_t) * child->window_count);
     parent->window_count = child->window_count;
+    parent->stack_selector_anchor = child->stack_selector_anchor;
+    parent->stack_selector_anchor_override = child->stack_selector_anchor_override;
 
     parent->left      = NULL;
     parent->right     = NULL;
@@ -715,6 +737,8 @@ struct window_node *view_remove_window_node(struct view *view, struct window *wi
     }
 
     insert_feedback_destroy(node);
+    stack_selector_destroy_node(child);
+    stack_selector_destroy_node(node);
     free(child);
     free(node);
 
@@ -746,6 +770,8 @@ void view_stack_window_node(struct window_node *node, struct window *window)
     memmove(node->window_order + 1, node->window_order, sizeof(uint32_t) * node->window_count);
     node->window_order[0] = window->id;
     ++node->window_count;
+
+    stack_selector_update_node(node);
 }
 
 struct window_node *view_add_window_node_with_insertion_point(struct view *view, struct window *window, uint32_t insertion_point)
@@ -1025,6 +1051,7 @@ void view_clear(struct view *view)
         }
 
         insert_feedback_destroy(view->root);
+        stack_selector_destroy_node(view->root);
         memset(view->root, 0, sizeof(struct window_node));
         view_update(view);
     }
