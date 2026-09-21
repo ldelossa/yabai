@@ -208,6 +208,8 @@ void space_manager_set_layout_for_space(struct space_manager *sm, uint64_t sid, 
     if (view->layout != VIEW_FLOAT) {
         window_manager_validate_and_check_for_windows_on_space(sm, &g_window_manager, sid);
     }
+
+    status_island_refresh();
 }
 
 bool space_manager_set_gap_for_space(struct space_manager *sm, uint64_t sid, int type, int gap)
@@ -271,6 +273,8 @@ void space_manager_set_layout_for_all_spaces(struct space_manager *sm, enum view
             }
         }
     })
+
+    status_island_refresh();
 }
 
 void space_manager_set_window_gap_for_all_spaces(struct space_manager *sm, int window_gap)

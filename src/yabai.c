@@ -347,6 +347,8 @@ int main(int argc, char **argv)
 
     exec_config_file(g_config_file, sizeof(g_config_file));
 
+    status_island_refresh();
+
     [NSApp run];
 
     return 0;

@@ -248,6 +248,17 @@ Global Settings
     Set the default anchor used by stack selectors. +
     Valid anchors are: vertical-top-left, vertical-center-left, vertical-bottom-left, vertical-top-right, vertical-center-right, vertical-bottom-right, horizontal-left-top, horizontal-center-top, horizontal-right-top, horizontal-left-bottom, horizontal-center-bottom, horizontal-right-bottom.
 
+*status_island* ['<BOOL_SEL>']::
+    Show a dynamic-island style status pill merged with the notch. +
+    The left wing shows the focused workspace name and the right wing shows the focused space layout. +
+    Clicking the left wing opens a workspace selector; clicking the right wing opens a layout selector. +
+    Enabled by default.
+
+*status_island_workspace_order* ['<index|alphabetical|creation>']::
+    Order the remaining workspaces in the workspace selector dropdown. +
+    The focused workspace is always shown first. +
+    'index' sorts by mission-control index, 'alphabetical' by label, and 'creation' by space creation order.
+
 *skip_window_focus_animation* ['<BOOL_SEL>']::
     Bypass macOS space animation when an application or window on an inactive space is focused. +
     You should only enable this if you do NOT use the scripting addition. +
