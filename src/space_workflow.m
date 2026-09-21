@@ -26,6 +26,7 @@ void space_workflow_destroy_snapshot(struct space_workflow_snapshot *snapshot)
         free(snapshot->spaces[i].label);
     }
     free(snapshot->spaces);
+    free(snapshot->displays);
     free(snapshot->focused_label);
     free(snapshot);
 }
@@ -42,8 +43,11 @@ static struct space_workflow_snapshot *space_workflow_create_snapshot(enum comma
 
     int display_count = 0;
     uint32_t *display_list = display_manager_active_display_list(&display_count);
+    snapshot->display_count = display_count;
+    snapshot->displays = calloc(display_count, sizeof(uint32_t));
     for (int display = 0; display < display_count; ++display) {
         uint32_t did = display_list[display];
+        snapshot->displays[display] = did;
         int space_count = 0;
         uint64_t *space_list = display_space_list(did, &space_count);
         for (int i = 0; i < space_count; ++i) {
@@ -56,7 +60,9 @@ static struct space_workflow_snapshot *space_workflow_create_snapshot(enum comma
             space->sid = sid;
             space->index = space_manager_mission_control_index(sid);
             space->display_index = display_manager_display_id_arrangement(did);
+            space->display_id = did;
             space->focused = sid == snapshot->focused_sid;
+            space->display_current = sid == display_space_id(did);
             space->user_space = space_is_user(sid);
 
             struct view *view = space_manager_find_view(&g_space_manager, sid);
@@ -72,6 +78,11 @@ static struct space_workflow_snapshot *space_workflow_create_snapshot(enum comma
     }
 
     return snapshot;
+}
+
+struct space_workflow_snapshot *space_workflow_create_space_snapshot(void)
+{
+    return space_workflow_create_snapshot(COMMAND_PALETTE_NATIVE_NONE, false);
 }
 
 static void space_workflow_deliver_snapshot(struct space_workflow_snapshot *snapshot)
@@ -135,6 +146,16 @@ void space_workflow_submit(enum command_palette_native_action action, uint64_t s
         return;
     }
 
+    event_loop_post(&g_event_loop, SPACE_WORKFLOW_REQUEST, request, 0);
+}
+
+void space_workflow_submit_layout(enum view_type layout)
+{
+    if (layout != VIEW_BSP && layout != VIEW_STACK && layout != VIEW_FLOAT) return;
+
+    struct space_workflow_request *request = calloc(1, sizeof(struct space_workflow_request));
+    request->type = SPACE_WORKFLOW_SET_LAYOUT;
+    request->text = strdup(view_type_str[layout]);
     event_loop_post(&g_event_loop, SPACE_WORKFLOW_REQUEST, request, 0);
 }
 
@@ -228,6 +249,32 @@ void space_workflow_handle_request(void *context)
     case SPACE_WORKFLOW_LAYOUT_CYCLE:
         space_workflow_cycle_layout();
         break;
+    case SPACE_WORKFLOW_SET_LAYOUT: {
+        uint64_t sid = space_manager_active_space();
+        if (!space_is_user(sid)) {
+            space_workflow_deliver_result("Cannot change the layout of a macOS fullscreen space.", false, false);
+            break;
+        }
+
+        enum view_type layout = VIEW_DEFAULT;
+        if (request->text) {
+            if (string_equals(request->text, "bsp")) layout = VIEW_BSP;
+            else if (string_equals(request->text, "stack")) layout = VIEW_STACK;
+            else if (string_equals(request->text, "float")) layout = VIEW_FLOAT;
+        }
+        if (layout == VIEW_DEFAULT) {
+            space_workflow_deliver_result("Unknown layout.", false, false);
+            break;
+        }
+
+        struct view *view = space_manager_find_view(&g_space_manager, sid);
+        if (view) {
+            view_set_flag(view, VIEW_LAYOUT);
+            space_manager_set_layout_for_space(&g_space_manager, sid, layout);
+        }
+        status_island_refresh();
+        space_workflow_deliver_result("", true, true);
+    } break;
     case SPACE_WORKFLOW_CREATE_TIMEOUT:
         if (g_space_workflow_pending_create.active &&
             request->generation == g_space_workflow_pending_create.generation) {

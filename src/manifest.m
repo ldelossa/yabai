@@ -80,6 +80,7 @@
 #include "native_palette.h"
 #include "command_palette.h"
 #include "space_workflow.h"
+#include "status_island.h"
 
 #include "sa.m"
 #include "mission_control.c"
@@ -92,6 +93,7 @@
 #include "native_palette.m"
 #include "command_palette.m"
 #include "space_workflow.m"
+#include "status_island.m"
 #include "display.c"
 #include "space.c"
 #include "view.c"

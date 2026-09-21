@@ -8,6 +8,7 @@ enum space_workflow_request_type
     SPACE_WORKFLOW_CREATE_AND_FOCUS,
     SPACE_WORKFLOW_RELABEL,
     SPACE_WORKFLOW_LAYOUT_CYCLE,
+    SPACE_WORKFLOW_SET_LAYOUT,
     SPACE_WORKFLOW_CREATE_TIMEOUT,
 };
 
@@ -26,9 +27,11 @@ struct space_workflow_space
     uint64_t sid;
     int index;
     int display_index;
+    uint32_t display_id;
     int window_count;
     enum view_type layout;
     bool focused;
+    bool display_current;
     bool user_space;
     char *label;
 };
@@ -37,6 +40,8 @@ struct space_workflow_snapshot
 {
     struct space_workflow_space *spaces;
     int count;
+    uint32_t *displays;
+    int display_count;
     enum command_palette_native_action action;
     bool nested;
     uint64_t focused_sid;
@@ -44,6 +49,8 @@ struct space_workflow_snapshot
 };
 
 enum view_type space_workflow_next_layout(enum view_type layout);
+struct space_workflow_snapshot *space_workflow_create_space_snapshot(void);
+void space_workflow_submit_layout(enum view_type layout);
 void space_workflow_present(enum command_palette_native_action action, bool nested);
 void space_workflow_submit(enum command_palette_native_action action, uint64_t sid, char *text);
 void space_workflow_handle_request(void *context);

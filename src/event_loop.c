@@ -1029,6 +1029,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
     }
 
     stack_selector_update_all();
+    status_island_refresh();
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
 }
 
@@ -1082,6 +1083,7 @@ static EVENT_HANDLER(DISPLAY_CHANGED)
     }
 
     stack_selector_update_all();
+    status_island_refresh();
     event_signal_push(SIGNAL_DISPLAY_CHANGED, NULL);
 }
 
@@ -1092,6 +1094,7 @@ static EVENT_HANDLER(DISPLAY_ADDED)
     space_manager_handle_display_add(&g_space_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, did);
     stack_selector_update_all();
+    status_island_refresh();
     event_signal_push(SIGNAL_DISPLAY_ADDED, context);
 }
 
@@ -1102,6 +1105,7 @@ static EVENT_HANDLER(DISPLAY_REMOVED)
     display_manager_remove_label_for_display(&g_display_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, display_manager_main_display_id());
     stack_selector_update_all();
+    status_island_refresh();
     event_signal_push(SIGNAL_DISPLAY_REMOVED, context);
 }
 
@@ -1110,6 +1114,7 @@ static EVENT_HANDLER(DISPLAY_MOVED)
     uint32_t did = (uint32_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid(&g_space_manager);
+    status_island_refresh();
     event_signal_push(SIGNAL_DISPLAY_MOVED, context);
 }
 
@@ -1118,6 +1123,7 @@ static EVENT_HANDLER(DISPLAY_RESIZED)
     uint32_t did = (uint32_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid_for_display(&g_space_manager, did);
+    status_island_refresh();
     event_signal_push(SIGNAL_DISPLAY_RESIZED, context);
 }
 

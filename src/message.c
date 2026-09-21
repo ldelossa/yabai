@@ -31,6 +31,8 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_WINDOW_ZOOM_PERSIST   "window_zoom_persist"
 #define COMMAND_CONFIG_STACK_SELECTOR        "stack_selector"
 #define COMMAND_CONFIG_STACK_SELECTOR_ANCHOR "stack_selector_anchor"
+#define COMMAND_CONFIG_STATUS_ISLAND          "status_island"
+#define COMMAND_CONFIG_STATUS_ISLAND_ORDER     "status_island_workspace_order"
 #define COMMAND_CONFIG_OPACITY               "window_opacity"
 #define COMMAND_CONFIG_OPACITY_DURATION      "window_opacity_duration"
 #define COMMAND_CONFIG_ANIMATION_DURATION    "window_animation_duration"
@@ -1278,6 +1280,33 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                 stack_selector_set_enabled(false);
             } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
                 stack_selector_set_enabled(true);
+            } else {
+                daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_STATUS_ISLAND)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", bool_str[status_island_is_enabled()]);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_OFF)) {
+                status_island_set_enabled(false);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
+                status_island_set_enabled(true);
+            } else {
+                daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_STATUS_ISLAND_ORDER)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                const char *order = g_status_island_workspace_order == STATUS_ISLAND_ORDER_ALPHABETICAL ? "alphabetical"
+                                  : g_status_island_workspace_order == STATUS_ISLAND_ORDER_CREATION ? "creation"
+                                  : "index";
+                fprintf(rsp, "%s\n", order);
+            } else if (token_equals(value, "index")) {
+                status_island_set_workspace_order(STATUS_ISLAND_ORDER_INDEX);
+            } else if (token_equals(value, "alphabetical")) {
+                status_island_set_workspace_order(STATUS_ISLAND_ORDER_ALPHABETICAL);
+            } else if (token_equals(value, "creation")) {
+                status_island_set_workspace_order(STATUS_ISLAND_ORDER_CREATION);
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }
