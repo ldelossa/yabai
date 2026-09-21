@@ -2119,6 +2119,8 @@ void window_manager_send_window_to_space(struct space_manager *sm, struct window
         struct view *view = space_manager_tile_window_on_space(sm, window, dst_sid);
         window_manager_add_managed_window(wm, window, view);
     }
+
+    space_cleaner_run();
 }
 
 enum window_op_error window_manager_apply_grid(struct space_manager *sm, struct window_manager *wm, struct window *window, unsigned r, unsigned c, unsigned x, unsigned y, unsigned w, unsigned h)
