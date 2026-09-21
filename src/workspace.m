@@ -5,6 +5,10 @@ bool workspace_event_handler_begin(void **context)
     SUPPORTED_MACOS_VERSION_LIST
 #undef SUPPORT_MACOS_VERSION
 
+    // Treat future macOS releases as members of the latest private-API family.
+    // This fork targets macOS 27 and newer rather than falling back to legacy paths.
+    if (version.majorVersion >= 26) _workspace_is_macos_version_tahoe = true;
+
     workspace_context *ws_context = [workspace_context alloc];
     if (!ws_context) return false;
 

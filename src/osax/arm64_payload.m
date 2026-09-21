@@ -22,7 +22,7 @@ uint64_t get_dock_spaces_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_dppm_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x70000;
+        return 0x50000; // macOS 27: dppm pattern relocated to 0x549fc
     } else if (os_version.majorVersion == 15) {
         return 0x250000;
     } else if (os_version.majorVersion == 14) {
@@ -38,7 +38,7 @@ uint64_t get_dppm_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_fix_animation_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x250000;
+        return 0x200000; // macOS 27: animation pattern relocated to 0x22b508
     } else if (os_version.majorVersion == 15) {
         return 0x250000;
     } else if (os_version.majorVersion == 14) {
@@ -54,7 +54,7 @@ uint64_t get_fix_animation_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_add_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x250000;
+        return 0x200000; // macOS 27: addSpace pattern relocated to 0x22ccbc
     } else if (os_version.majorVersion == 15) {
         return 0x250000;
     } else if (os_version.majorVersion == 14) {
@@ -70,7 +70,7 @@ uint64_t get_add_space_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_remove_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x1e0000;
+        return 0x180000; // macOS 27: removeSpace pattern relocated to 0x18f9a0
     } else if (os_version.majorVersion == 15) {
         return 0x1c0000;
     } else if (os_version.majorVersion == 14) {
@@ -86,7 +86,7 @@ uint64_t get_remove_space_offset(NSOperatingSystemVersion os_version) {
 
 uint64_t get_move_space_offset(NSOperatingSystemVersion os_version) {
     if (os_version.majorVersion == 26) {
-        return 0x1c0000;
+        return 0x180000; // macOS 27: moveSpace pattern relocated to 0x190554
     } else if (os_version.majorVersion == 15) {
         return 0x1c0000;
     } else if (os_version.majorVersion == 14) {

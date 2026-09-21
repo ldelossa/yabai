@@ -233,11 +233,11 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
     } else if (os_version.majorVersion == 15) {
         macOSSequoia = true;
         return true; // Sequoia 15.0
-    } else if (os_version.majorVersion == 26) {
+    } else if (os_version.majorVersion >= 26) {
 
-        NSLog(@"[yabai-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-sa] Detected macOS 26 or newer... using latest private-API family.");
         macOSSequoia = true;
-        return true; // Tahoe preview
+        return true;
     }
 
     NSLog(@"[yabai-sa] spaces functionality is only supported on macOS Big Sur 11.0.0+, Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, and Sequoia 15.0");
@@ -251,11 +251,11 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
     } else if (os_version.majorVersion == 15) {
         macOSSequoia = true;
         return true; // Sequoia 15.0
-    } else if (os_version.majorVersion == 26) {
+    } else if (os_version.majorVersion >= 26) {
 
-        NSLog(@"[yabai-sa] Detected Tahoe Preview... flagging 'macOSSequoia=true.'");
+        NSLog(@"[yabai-sa] Detected macOS 26 or newer... using latest private-API family.");
         macOSSequoia = true;
-        return true; // Tahoe preview
+        return true;
     }
 
     NSLog(@"[yabai-sa] spaces functionality is only supported on macOS Monterey 12.0.0+, and Ventura 13.0.0+, Sonoma 14.0.0+, and Sequoia 15.0");
@@ -268,6 +268,14 @@ static void init_instances()
 {
     NSOperatingSystemVersion os_version = [[NSProcessInfo processInfo] operatingSystemVersion];
     if (!verify_os_version(os_version)) return;
+
+    // macOS 27+ is the target for this fork. Start with the latest known
+    // private-API pattern family and replace individual patterns as Dock evolves.
+    if (os_version.majorVersion >= 27) {
+        os_version.majorVersion = 26;
+        os_version.minorVersion = 5;
+        os_version.patchVersion = 0;
+    }
 
     uint64_t baseaddr = static_base_address() + image_slide();
 
@@ -512,10 +520,20 @@ static void do_space_move(char *message)
     CFRelease(dest_display_uuid);
 }
 
+static inline bool can_add_space(void)
+{
+    return add_space_fp != 0 || [dock_spaces respondsToSelector:NSSelectorFromString(@"addSpace:forDisplayUUID:")];
+}
+
+static inline bool can_remove_space(void)
+{
+    return remove_space_fp != 0 || [dock_spaces respondsToSelector:NSSelectorFromString(@"removeSpace:")];
+}
+
 typedef void (*remove_space_call)(id space, id display_space, id dock_spaces, uint64_t space_id1, uint64_t space_id2);
 static void do_space_destroy(char *message)
 {
-    if (dock_spaces == nil || remove_space_fp == 0) return;
+    if (dock_spaces == nil || !can_remove_space()) return;
 
     uint64_t space_id;
     unpack(space_id);
@@ -527,7 +545,12 @@ static void do_space_destroy(char *message)
     id display_space = display_space_for_display_uuid(display_uuid);
 
     dispatch_sync(dispatch_get_main_queue(), ^{
-        ((remove_space_call) remove_space_fp)(space, display_space, dock_spaces, space_id, space_id);
+        if (remove_space_fp) {
+            ((remove_space_call) remove_space_fp)(space, display_space, dock_spaces, space_id, space_id);
+        } else {
+            SEL selector = NSSelectorFromString(@"removeSpace:");
+            ((void (*)(id, SEL, id)) objc_msgSend)(dock_spaces, selector, space);
+        }
     });
 
     if (active_space_id == space_id) {
@@ -541,7 +564,7 @@ static void do_space_destroy(char *message)
 
 static void do_space_create(char *message)
 {
-    if (dock_spaces == nil || add_space_fp == 0) return;
+    if (dock_spaces == nil || !can_add_space()) return;
 
     uint64_t space_id;
     unpack(space_id);
@@ -551,8 +574,13 @@ static void do_space_create(char *message)
         id new_space = macOSSequoia
                      ? [[objc_getClass("ManagedSpace") alloc] init]
                      : [[objc_getClass("Dock.ManagedSpace") alloc] init];
-        id display_space = display_space_for_display_uuid(display_uuid);
-        asm__call_add_space(new_space, display_space, add_space_fp);
+        if (add_space_fp) {
+            id display_space = display_space_for_display_uuid(display_uuid);
+            asm__call_add_space(new_space, display_space, add_space_fp);
+        } else {
+            SEL selector = NSSelectorFromString(@"addSpace:forDisplayUUID:");
+            ((void (*)(id, SEL, id, CFStringRef)) objc_msgSend)(dock_spaces, selector, new_space, display_uuid);
+        }
         CFRelease(display_uuid);
     });
 }
@@ -935,8 +963,8 @@ static void do_handshake(int sockfd)
 
     if (dock_spaces != nil)                attrib |= OSAX_ATTRIB_DOCK_SPACES;
     if (dp_desktop_picture_manager != nil) attrib |= OSAX_ATTRIB_DPPM;
-    if (add_space_fp)                      attrib |= OSAX_ATTRIB_ADD_SPACE;
-    if (remove_space_fp)                   attrib |= OSAX_ATTRIB_REM_SPACE;
+    if (can_add_space())                   attrib |= OSAX_ATTRIB_ADD_SPACE;
+    if (can_remove_space())                attrib |= OSAX_ATTRIB_REM_SPACE;
     if (move_space_fp)                     attrib |= OSAX_ATTRIB_MOV_SPACE;
     if (set_front_window_fp)               attrib |= OSAX_ATTRIB_SET_WINDOW;
     if (animation_time_addr)               attrib |= OSAX_ATTRIB_ANIM_TIME;
