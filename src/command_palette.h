@@ -16,6 +16,15 @@ enum command_palette_action_kind
     COMMAND_PALETTE_ACTION_NATIVE,
 };
 
+enum command_palette_picker_kind
+{
+    COMMAND_PALETTE_PICKER_NONE,
+    COMMAND_PALETTE_PICKER_WINDOW,
+    COMMAND_PALETTE_PICKER_SPACE,
+    COMMAND_PALETTE_PICKER_DISPLAY,
+    COMMAND_PALETTE_PICKER_ENUM,
+};
+
 enum command_palette_native_action
 {
     COMMAND_PALETTE_NATIVE_NONE,
@@ -51,6 +60,7 @@ extern const struct command_palette_action g_command_palette_actions[];
 extern const int g_command_palette_action_count;
 
 const struct command_palette_action *command_palette_find_action(char *identifier);
+enum command_palette_picker_kind command_palette_picker_kind_for_action(const struct command_palette_action *action);
 int command_palette_action_score(const struct command_palette_action *action, char *query);
 char *command_palette_build_message(const struct command_palette_action *action, char *argument, int *length);
 void command_palette_handle_message(FILE *rsp, char *message);

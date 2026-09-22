@@ -219,6 +219,97 @@ static void space_workflow_cycle_layout(void)
     space_workflow_deliver_result("", true, true);
 }
 
+void space_workflow_present_picker(const char *action_identifier, enum command_palette_picker_kind kind)
+{
+    struct space_workflow_request *request = calloc(1, sizeof(struct space_workflow_request));
+    request->type = SPACE_WORKFLOW_PRESENT_PICKER;
+    request->picker_kind = kind;
+    request->text = strdup(action_identifier && *action_identifier ? action_identifier : "");
+    event_loop_post(&g_event_loop, SPACE_WORKFLOW_REQUEST, request, 0);
+}
+
+static struct space_workflow_picker_snapshot *space_workflow_create_picker_snapshot(enum command_palette_picker_kind kind, const char *action_identifier)
+{
+    struct space_workflow_snapshot *space_snapshot = space_workflow_create_space_snapshot();
+    if (!space_snapshot) return NULL;
+
+    struct space_workflow_picker_snapshot *snapshot = calloc(1, sizeof(struct space_workflow_picker_snapshot));
+    snapshot->kind = kind;
+    snapshot->action_identifier = strdup(action_identifier && *action_identifier ? action_identifier : "");
+    snapshot->spaces = space_snapshot->spaces;
+    snapshot->space_count = space_snapshot->count;
+    snapshot->focused_sid = space_snapshot->focused_sid;
+
+    snapshot->display_count = space_snapshot->display_count;
+    snapshot->displays = calloc(snapshot->display_count, sizeof(struct space_workflow_display_item));
+    for (int i = 0; i < snapshot->display_count; ++i) {
+        uint32_t did = space_snapshot->displays[i];
+        snapshot->displays[i].did = did;
+        snapshot->displays[i].index = display_manager_display_id_arrangement(did);
+        CGRect frame = CGDisplayBounds(did);
+        snapshot->displays[i].x = (int)frame.origin.x;
+        snapshot->displays[i].y = (int)frame.origin.y;
+        snapshot->displays[i].w = (int)frame.size.width;
+        snapshot->displays[i].h = (int)frame.size.height;
+    }
+    free(space_snapshot->displays);
+    free(space_snapshot->focused_label);
+    free(space_snapshot);
+
+    struct window *focused_window = window_manager_focused_window(&g_window_manager);
+    snapshot->focused_wid = focused_window ? focused_window->id : 0;
+
+    int window_count = 0;
+    table_for (struct window *window, g_window_manager.window, {
+        if (window->id) ++window_count;
+    });
+
+    snapshot->windows = calloc(window_count, sizeof(struct space_workflow_window_item));
+    snapshot->window_count = 0;
+    table_for (struct window *window, g_window_manager.window, {
+        if (!window->id) continue;
+
+        struct space_workflow_window_item *item = &snapshot->windows[snapshot->window_count++];
+        item->wid = window->id;
+        item->pid = window->application ? window->application->pid : 0;
+        item->app = window->application && window->application->name ? strdup(window->application->name) : strdup("");
+        item->title = window->title ? cfstring_copy(window->title) : strdup("");
+        item->sid = window_space(window->id);
+        item->space_index = space_manager_mission_control_index(item->sid);
+    });
+
+    return snapshot;
+}
+
+static void space_workflow_present_picker_snapshot(struct space_workflow_request *request)
+{
+    struct space_workflow_picker_snapshot *snapshot = space_workflow_create_picker_snapshot(request->picker_kind, request->text);
+    if (!snapshot) return;
+
+    dispatch_async(dispatch_get_main_queue(), ^{
+        command_palette_show_picker(snapshot);
+    });
+}
+
+void space_workflow_destroy_picker_snapshot(struct space_workflow_picker_snapshot *snapshot)
+{
+    if (!snapshot) return;
+    if (snapshot->spaces) {
+        for (int i = 0; i < snapshot->space_count; ++i) free(snapshot->spaces[i].label);
+        free(snapshot->spaces);
+    }
+    if (snapshot->windows) {
+        for (int i = 0; i < snapshot->window_count; ++i) {
+            free(snapshot->windows[i].app);
+            free(snapshot->windows[i].title);
+        }
+        free(snapshot->windows);
+    }
+    free(snapshot->displays);
+    free(snapshot->action_identifier);
+    free(snapshot);
+}
+
 void space_workflow_handle_request(void *context)
 {
     struct space_workflow_request *request = context;
@@ -282,6 +373,9 @@ void space_workflow_handle_request(void *context)
             memset(&g_space_workflow_pending_create, 0, sizeof(g_space_workflow_pending_create));
             space_workflow_deliver_result("Timed out while waiting for the new space.", false, false);
         }
+        break;
+    case SPACE_WORKFLOW_PRESENT_PICKER:
+        space_workflow_present_picker_snapshot(request);
         break;
     }
 

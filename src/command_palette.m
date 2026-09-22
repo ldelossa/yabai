@@ -263,6 +263,7 @@ enum command_palette_content
 {
     COMMAND_PALETTE_CONTENT_ACTIONS,
     COMMAND_PALETTE_CONTENT_SPACES,
+    COMMAND_PALETTE_CONTENT_PICKER,
 };
 
 @class command_palette_controller;
@@ -281,8 +282,11 @@ enum command_palette_content
     NSTableView *_tableView;
     NSMutableArray *_filteredActions;
     NSMutableArray *_spaceItems;
+    NSMutableArray *_pickerItems;
+    NSMutableArray *_enumTokens;
     NSTextField *_sectionField;
     NSTextField *_footerField;
+    NSButton *_backButton;
     NSTextField *_breadcrumbField;
     NSTextField *_detailTitleField;
     NSTextField *_detailIdField;
@@ -294,6 +298,8 @@ enum command_palette_content
     NSView *_listFooterBar;
     NSView *_detailFooterBar;
     const struct command_palette_action *_pendingAction;
+    const struct command_palette_action *_pickerAction;
+    enum command_palette_picker_kind _pickerKind;
     NSString *_pendingArgument;
     enum command_palette_view_state _state;
     enum command_palette_content _content;
@@ -349,6 +355,9 @@ enum command_palette_content
     if (self) {
         _filteredActions = [[NSMutableArray alloc] initWithCapacity:g_command_palette_action_count];
         _spaceItems = [[NSMutableArray alloc] init];
+        _pickerItems = [[NSMutableArray alloc] init];
+        _enumTokens = [[NSMutableArray alloc] init];
+        _pickerKind = COMMAND_PALETTE_PICKER_NONE;
         _state = COMMAND_PALETTE_VIEW_LIST;
         _content = COMMAND_PALETTE_CONTENT_ACTIONS;
         _hoveredRow = -1;
@@ -362,6 +371,8 @@ enum command_palette_content
     [_panel release];
     [_filteredActions release];
     [_spaceItems release];
+    [_pickerItems release];
+    [_enumTokens release];
     [_pendingArgument release];
     [super dealloc];
 }
@@ -444,12 +455,15 @@ enum command_palette_content
         NSInteger row = _tableView.selectedRow;
         native_palette_item *item = row >= 0 && row < (NSInteger)_filteredActions.count ? _filteredActions[row] : nil;
         verb = item.kind == NATIVE_PALETTE_ITEM_CREATE_SPACE ? @"create" : @"focus";
+    } else if (_content == COMMAND_PALETTE_CONTENT_PICKER) {
+        verb = @"select";
     }
 
     CGFloat x = 0;
     [self addKeyHintToBar:_listFooterBar keySymbolNames:@[@"arrow.up", @"arrow.down"] text:@"navigate" atX:&x];
     [self addKeyHintToBar:_listFooterBar keySymbolNames:@[@"return"] text:verb atX:&x];
-    NSString *escape = _content == COMMAND_PALETTE_CONTENT_SPACES && _workflowNested ? @"back" : @"close";
+    NSString *escape = (_content == COMMAND_PALETTE_CONTENT_SPACES && _workflowNested) ||
+                       _content == COMMAND_PALETTE_CONTENT_PICKER ? @"back" : @"close";
     [self setRightHintForBar:_listFooterBar keySymbolName:@"escape" text:escape];
 }
 
@@ -520,7 +534,18 @@ enum command_palette_content
     _searchField.delegate = self;
     [_listView addSubview:_searchField];
 
-    _sectionField = [self labelWithFrame:NSMakeRect(18, 322, 200, 14)
+    _backButton = [[NSButton alloc] initWithFrame:NSMakeRect(12, 351, 28, 30)];
+    _backButton.image = [NSImage imageWithSystemSymbolName:@"chevron.left" accessibilityDescription:nil];
+    _backButton.imagePosition = NSImageOnly;
+    _backButton.bezelStyle = NSBezelStyleRounded;
+    _backButton.bordered = NO;
+    _backButton.title = @"";
+    _backButton.target = self;
+    _backButton.action = @selector(backToActions:);
+    _backButton.hidden = YES;
+    [_listView addSubview:_backButton];
+
+    _sectionField = [self labelWithFrame:NSMakeRect(18, 322, 606, 14)
                                    value:@"ACTIONS"
                                     font:[NSFont systemFontOfSize:10.0f weight:NSFontWeightSemibold]
                                    color:NSColor.tertiaryLabelColor];
@@ -663,18 +688,43 @@ enum command_palette_content
                                                                string_equals(action->category, "Space") ? "rectangle.3.group" :
                                                                string_equals(action->category, "Display") ? "display" : "gearshape"];
             NSString *identifier = [NSString stringWithUTF8String:action->identifier];
-            NSString *detail = action->syntax
-                             ? [NSString stringWithFormat:@"%@  %@", identifier, [NSString stringWithUTF8String:action->syntax]]
-                             : identifier;
+            enum command_palette_picker_kind picker_kind = command_palette_picker_kind_for_action(action);
             native_palette_item *item = [native_palette_item itemWithTitle:[NSString stringWithUTF8String:action->title]
-                                                                    detail:detail
+                                                                    detail:identifier
                                                                   category:[NSString stringWithUTF8String:action->category]
                                                                 symbolName:symbolName
                                                                       kind:NATIVE_PALETTE_ITEM_ACTION];
+            switch (picker_kind) {
+            case COMMAND_PALETTE_PICKER_WINDOW:
+                item.badge = @"WINDOW_SEL";
+                item.badgeStyle = NATIVE_PALETTE_BADGE_SELECTOR;
+                break;
+            case COMMAND_PALETTE_PICKER_SPACE:
+                item.badge = @"SPACE_SEL";
+                item.badgeStyle = NATIVE_PALETTE_BADGE_SELECTOR;
+                break;
+            case COMMAND_PALETTE_PICKER_DISPLAY:
+                item.badge = @"DISPLAY_SEL";
+                item.badgeStyle = NATIVE_PALETTE_BADGE_SELECTOR;
+                break;
+            case COMMAND_PALETTE_PICKER_ENUM:
+                item.badge = @"enum";
+                item.badgeStyle = NATIVE_PALETTE_BADGE_ENUM;
+                break;
+            default:
+                if (action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
+                    item.badge = @"native";
+                    item.badgeStyle = NATIVE_PALETTE_BADGE_NATIVE;
+                } else if (action->argument_mode != COMMAND_PALETTE_ARGUMENT_NONE) {
+                    item.badge = @"text";
+                    item.badgeStyle = NATIVE_PALETTE_BADGE_TEXT;
+                }
+                break;
+            }
             item.representedPointer = (void *)action;
             [_filteredActions addObject:item];
         }
-    } else {
+    } else if (_content == COMMAND_PALETTE_CONTENT_SPACES) {
         NSString *query = [_searchField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
         for (native_palette_item *item in _spaceItems) {
             if (!query.length ||
@@ -690,6 +740,15 @@ enum command_palette_content
                                                                 symbolName:@"plus.circle"
                                                                       kind:NATIVE_PALETTE_ITEM_CREATE_SPACE];
             [_filteredActions addObject:item];
+        }
+    } else if (_content == COMMAND_PALETTE_CONTENT_PICKER) {
+        NSString *query = [_searchField.stringValue stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        for (native_palette_item *item in _pickerItems) {
+            if (!query.length ||
+                [item.title rangeOfString:query options:NSCaseInsensitiveSearch].location != NSNotFound ||
+                [item.category rangeOfString:query options:NSCaseInsensitiveSearch].location != NSNotFound) {
+                [_filteredActions addObject:item];
+            }
         }
     }
 
@@ -885,6 +944,22 @@ enum command_palette_content
     if (action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
         _executing = true;
         space_workflow_present(action->native_action, true);
+        return;
+    }
+
+    enum command_palette_picker_kind picker_kind = command_palette_picker_kind_for_action(action);
+    if (picker_kind != COMMAND_PALETTE_PICKER_NONE) {
+        _pickerAction = action;
+        _pickerKind = picker_kind;
+        if (picker_kind == COMMAND_PALETTE_PICKER_ENUM) {
+            [self buildEnumItemsForAction:action];
+            [self preparePickerList];
+            [self filterActions];
+            [self showList];
+        } else {
+            _executing = true;
+            space_workflow_present_picker(action->identifier, picker_kind);
+        }
     } else if (action->argument_mode != COMMAND_PALETTE_ARGUMENT_NONE) {
         [self showInputForAction:action];
     } else if (action->destructive) {
@@ -938,6 +1013,8 @@ enum command_palette_content
     native_palette_item *item = _filteredActions[row];
     if (_content == COMMAND_PALETTE_CONTENT_ACTIONS) {
         [self activateAction:item.representedPointer];
+    } else if (_content == COMMAND_PALETTE_CONTENT_PICKER) {
+        [self activatePickerRow:item];
     } else if (item.kind == NATIVE_PALETTE_ITEM_CREATE_SPACE) {
         space_workflow_submit(COMMAND_PALETTE_NATIVE_SPACE_CHOOSE, 0, (char *)_searchField.stringValue.UTF8String);
         _executing = true;
@@ -945,6 +1022,188 @@ enum command_palette_content
         space_workflow_submit(COMMAND_PALETTE_NATIVE_SPACE_CHOOSE, item.representedValue, NULL);
         _executing = true;
     }
+}
+
+- (NSString *)argumentForPickerItem:(native_palette_item *)item
+{
+    switch (_pickerKind) {
+    case COMMAND_PALETTE_PICKER_WINDOW:
+        return [NSString stringWithFormat:@"%u", (uint32_t)item.representedValue];
+    case COMMAND_PALETTE_PICKER_SPACE:
+    case COMMAND_PALETTE_PICKER_DISPLAY:
+        return [NSString stringWithFormat:@"%d", (int)item.representedValue];
+    case COMMAND_PALETTE_PICKER_ENUM:
+        if (item.representedValue < (uint64_t)_enumTokens.count) {
+            return _enumTokens[(NSUInteger)item.representedValue];
+        }
+        return nil;
+    default:
+        return nil;
+    }
+}
+
+- (void)activatePickerRow:(native_palette_item *)item
+{
+    if (!_pickerAction || _executing) return;
+    NSString *argument = [self argumentForPickerItem:item];
+    if (!argument) return;
+    [self executeAction:_pickerAction argument:argument];
+}
+
+- (NSString *)symbolNameForEnumToken:(NSString *)token
+{
+    NSString *lower = token.lowercaseString;
+    if ([lower isEqualToString:@"stack"]) return @"rectangle.stack";
+    if ([lower isEqualToString:@"bsp"]) return @"rectangle.split.2x1";
+    if ([lower isEqualToString:@"float"]) return @"rectangle.inset.filled";
+    if ([lower isEqualToString:@"on"]) return @"checkmark.circle";
+    if ([lower isEqualToString:@"off"]) return @"circle";
+    if ([lower isEqualToString:@"north"]) return @"arrow.up";
+    if ([lower isEqualToString:@"south"]) return @"arrow.down";
+    if ([lower isEqualToString:@"east"]) return @"arrow.right";
+    if ([lower isEqualToString:@"west"]) return @"arrow.left";
+    return @"circle";
+}
+
+- (void)buildEnumItemsForAction:(const struct command_palette_action *)action
+{
+    [_pickerItems removeAllObjects];
+    [_enumTokens removeAllObjects];
+
+    NSArray *tokens = nil;
+    if (string_equals(action->syntax, "STACK_SELECTOR_ANCHOR")) {
+        NSMutableArray *anchors = [NSMutableArray arrayWithCapacity:STACK_SELECTOR_ANCHOR_COUNT];
+        for (int i = 0; i < STACK_SELECTOR_ANCHOR_COUNT; ++i) {
+            [anchors addObject:[NSString stringWithUTF8String:g_stack_selector_anchor_str[i]]];
+        }
+        tokens = anchors;
+    } else {
+        tokens = [[NSString stringWithUTF8String:action->syntax] componentsSeparatedByString:@"|"];
+    }
+
+    for (NSString *token in tokens) {
+        NSString *trimmed = [token stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+        if (!trimmed.length) continue;
+        [_enumTokens addObject:trimmed];
+        native_palette_item *item = [native_palette_item itemWithTitle:trimmed
+                                                                detail:@""
+                                                              category:@""
+                                                            symbolName:[self symbolNameForEnumToken:trimmed]
+                                                                  kind:NATIVE_PALETTE_ITEM_ACTION];
+        item.representedValue = _enumTokens.count - 1;
+        [_pickerItems addObject:item];
+    }
+}
+
+- (void)preparePickerList
+{
+    _content = COMMAND_PALETTE_CONTENT_PICKER;
+    _backButton.hidden = NO;
+    _searchField.frame = NSMakeRect(46, 348, 590, 36);
+    _searchField.stringValue = @"";
+
+    NSString *kind_word = @"VALUE";
+    switch (_pickerKind) {
+    case COMMAND_PALETTE_PICKER_WINDOW:
+        kind_word = @"WINDOW";
+        _searchField.placeholderString = @"Search windows…";
+        break;
+    case COMMAND_PALETTE_PICKER_SPACE:
+        kind_word = @"SPACE";
+        _searchField.placeholderString = @"Search spaces…";
+        break;
+    case COMMAND_PALETTE_PICKER_DISPLAY:
+        kind_word = @"DISPLAY";
+        _searchField.placeholderString = @"Search displays…";
+        break;
+    case COMMAND_PALETTE_PICKER_ENUM:
+        kind_word = @"VALUE";
+        _searchField.placeholderString = @"Search values…";
+        break;
+    default:
+        _searchField.placeholderString = @"Search…";
+        break;
+    }
+
+    NSString *action_title = _pickerAction ? [NSString stringWithUTF8String:_pickerAction->title] : @"";
+    _sectionField.stringValue = [[NSString stringWithFormat:@"%@ · CHOOSE %@", action_title, kind_word] uppercaseString];
+}
+
+- (void)showPicker:(struct space_workflow_picker_snapshot *)snapshot
+{
+    [self buildPanel];
+    _executing = false;
+
+    const struct command_palette_action *action = command_palette_find_action(snapshot->action_identifier);
+    if (!action) {
+        _pickerAction = NULL;
+        return;
+    }
+    _pickerAction = action;
+    _pickerKind = snapshot->kind;
+
+    [_pickerItems removeAllObjects];
+    [_enumTokens removeAllObjects];
+
+    if (snapshot->kind == COMMAND_PALETTE_PICKER_WINDOW) {
+        for (int i = 0; i < snapshot->window_count; ++i) {
+            struct space_workflow_window_item *window = &snapshot->windows[i];
+            if (window->wid == snapshot->focused_wid) continue;
+            NSString *title = window->title && *window->title ? [NSString stringWithUTF8String:window->title] : @"Untitled";
+            NSString *app = window->app && *window->app ? [NSString stringWithUTF8String:window->app] : @"Window";
+            NSString *detail = [NSString stringWithFormat:@"Space %d", window->space_index];
+            native_palette_item *item = [native_palette_item itemWithTitle:title
+                                                                    detail:detail
+                                                                  category:app
+                                                                symbolName:@"macwindow"
+                                                                      kind:NATIVE_PALETTE_ITEM_ACTION];
+            NSImage *app_icon = nil;
+            if (window->pid) {
+                NSRunningApplication *application = [NSRunningApplication runningApplicationWithProcessIdentifier:window->pid];
+                app_icon = application.icon;
+            }
+            if (app_icon) item.iconImage = app_icon;
+            item.representedValue = window->wid;
+            [_pickerItems addObject:item];
+        }
+    } else if (snapshot->kind == COMMAND_PALETTE_PICKER_SPACE) {
+        for (int i = 0; i < snapshot->space_count; ++i) {
+            struct space_workflow_space *space = &snapshot->spaces[i];
+            NSString *title = space->label && *space->label
+                            ? [NSString stringWithUTF8String:space->label]
+                            : [NSString stringWithFormat:@"Space %d", space->index];
+            NSString *detail = [NSString stringWithFormat:@"Display %d  ·  %@",
+                                                           space->display_index,
+                                                           [NSString stringWithUTF8String:view_type_str[space->layout]]];
+            NSString *category = space->focused ? @"Current" : @"";
+            native_palette_item *item = [native_palette_item itemWithTitle:title
+                                                                    detail:detail
+                                                                  category:category
+                                                                symbolName:@"rectangle.3.group"
+                                                                      kind:NATIVE_PALETTE_ITEM_ACTION];
+            item.representedValue = space->index;
+            [_pickerItems addObject:item];
+        }
+    } else if (snapshot->kind == COMMAND_PALETTE_PICKER_DISPLAY) {
+        for (int i = 0; i < snapshot->display_count; ++i) {
+            struct space_workflow_display_item *display = &snapshot->displays[i];
+            NSString *title = [NSString stringWithFormat:@"Display %d", display->index];
+            NSString *detail = [NSString stringWithFormat:@"%d × %d", display->w, display->h];
+            native_palette_item *item = [native_palette_item itemWithTitle:title
+                                                                    detail:detail
+                                                                  category:@""
+                                                                symbolName:@"display"
+                                                                      kind:NATIVE_PALETTE_ITEM_ACTION];
+            item.representedValue = display->index;
+            [_pickerItems addObject:item];
+        }
+    }
+
+    [self preparePickerList];
+    [self filterActions];
+    [self showList];
+    [_panel makeKeyAndOrderFront:nil];
+    [_panel orderFrontRegardless];
 }
 
 - (void)tableAction:(id)sender
@@ -960,11 +1219,20 @@ enum command_palette_content
 {
     _content = COMMAND_PALETTE_CONTENT_ACTIONS;
     _workflowNested = false;
+    _pickerAction = NULL;
+    _pickerKind = COMMAND_PALETTE_PICKER_NONE;
+    _backButton.hidden = YES;
+    _searchField.frame = NSMakeRect(14, 348, 622, 36);
     _searchField.placeholderString = @"Search Yabai actions…";
     _sectionField.stringValue = @"ACTIONS";
     _searchField.stringValue = @"";
     [self filterActions];
     [self showList];
+}
+
+- (void)backToActions:(id)sender
+{
+    [self showActionList];
 }
 
 - (void)cancelPalette:(id)sender
@@ -975,7 +1243,8 @@ enum command_palette_content
         } else {
             [self showList];
         }
-    } else if (_content == COMMAND_PALETTE_CONTENT_SPACES && _workflowNested) {
+    } else if ((_content == COMMAND_PALETTE_CONTENT_SPACES && _workflowNested) ||
+               _content == COMMAND_PALETTE_CONTENT_PICKER) {
         [self showActionList];
     } else {
         [_panel orderOut:nil];
@@ -1295,4 +1564,21 @@ void command_palette_execute_request(void *context)
         [[command_palette_controller sharedController] showExecutionResult:result success:success];
         free(response);
     });
+}
+
+enum command_palette_picker_kind command_palette_picker_kind_for_action(const struct command_palette_action *action)
+{
+    if (!action || !action->syntax) return COMMAND_PALETTE_PICKER_NONE;
+    if (string_equals(action->syntax, "WINDOW_SEL")) return COMMAND_PALETTE_PICKER_WINDOW;
+    if (string_equals(action->syntax, "SPACE_SEL")) return COMMAND_PALETTE_PICKER_SPACE;
+    if (string_equals(action->syntax, "DISPLAY_SEL")) return COMMAND_PALETTE_PICKER_DISPLAY;
+    if (string_equals(action->syntax, "STACK_SELECTOR_ANCHOR")) return COMMAND_PALETTE_PICKER_ENUM;
+    if (strchr(action->syntax, '|')) return COMMAND_PALETTE_PICKER_ENUM;
+    return COMMAND_PALETTE_PICKER_NONE;
+}
+
+void command_palette_show_picker(struct space_workflow_picker_snapshot *snapshot)
+{
+    [[command_palette_controller sharedController] showPicker:snapshot];
+    space_workflow_destroy_picker_snapshot(snapshot);
 }
