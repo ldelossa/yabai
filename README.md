@@ -1,96 +1,270 @@
-<!-- Please be careful editing the below HTML, as GitHub is quite finicky with anything that looks like an HTML tag in GitHub Flavored Markdown. -->
+<!-- GitHub is particular about HTML-like markup in Markdown. Keep the header HTML simple. -->
 <p align="center">
-  <img width="75%" src="assets/banner/banner.svg" alt="Banner">
-</p>
-<p align="center">
-  <b>Tiling window management for the Mac.</b>
-</p>
-<p align="center">
-  <a href="https://github.com/asmvik/yabai/blob/master/LICENSE.txt">
-    <img src="https://img.shields.io/github/license/asmvik/yabai.svg?color=green" alt="License Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/blob/master/doc/yabai.asciidoc">
-    <img src="https://img.shields.io/badge/view-documentation-green.svg" alt="Documentation Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/wiki">
-    <img src="https://img.shields.io/badge/view-wiki-green.svg" alt="Wiki Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/blob/master/CHANGELOG.md">
-    <img src="https://img.shields.io/badge/view-changelog-green.svg" alt="Changelog Badge">
-  </a>
-  <a href="https://github.com/asmvik/yabai/releases">
-    <img src="https://img.shields.io/github/commits-since/asmvik/yabai/latest.svg?color=green" alt="Version Badge">
-  </a>
+  <img width="75%" src="assets/banner/banner.svg" alt="yabai banner">
 </p>
 
-## About
+<h1 align="center">yabai for macOS 27+</h1>
 
-<img align="right" width="40%" src="assets/screenshot.png" alt="Screenshot">
+<p align="center">
+  A bleeding-edge, drop-in yabai fork with native command surfaces, stack navigation, workspace status, and automatic space cleanup.
+</p>
 
-yabai is a window management utility that is designed to work as an extension to the built-in window manager of macOS.
-yabai allows you to control your windows, spaces and displays freely using an intuitive command line interface and optionally set user-defined keyboard shortcuts using [&nearr;&nbsp;skhd][gh-skhd] and other third-party software.
+<p align="center">
+  <a href="LICENSE.txt"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT license"></a>
+  <a href="doc/yabai.asciidoc"><img src="https://img.shields.io/badge/command-reference-blue.svg" alt="Command reference"></a>
+  <img src="https://img.shields.io/badge/macOS-27%2B-black.svg" alt="macOS 27 or later">
+  <a href="https://github.com/asmvik/yabai"><img src="https://img.shields.io/badge/upstream-asmvik%2Fyabai-orange.svg" alt="Upstream yabai"></a>
+</p>
 
-The primary function of yabai is tiling window management; automatically modifying your window layout using a binary space partitioning algorithm to allow you to focus on the content of your windows without distractions.
-Additional features of yabai include focus-follows-mouse, disabling animations for switching spaces, creating spaces past the limit of 16 spaces, and much more.
+> [!IMPORTANT]
+> This fork supports macOS 27 and later only.
+> It deliberately follows the newest private macOS APIs and does not provide compatibility support for older macOS releases.
 
-## Installation and Configuration
+## What is this fork?
 
-- The [&nearr;&nbsp;yabai&nbsp;wiki][yabai-wiki] has both brief and detailed installation instructions for multiple installation methods, and also explains how to uninstall yabai completely.
-- Sample configuration files can be found in the [&nearr;&nbsp;examples][yabai-examples] directory. Refer to the [&nearr;&nbsp;documentation][yabai-docs] or the wiki for further information.
-- Keyboard shortcuts can be defined with [&nearr;&nbsp;skhd][gh-skhd] or any other suitable software you may prefer.
+This repository is a maintained fork of [asmvik/yabai](https://github.com/asmvik/yabai) that tracks upstream development while adding a small set of native macOS workflows and interfaces.
 
-## Requirements and Caveats
+It is intended to be a complete drop-in replacement for yabai.
 
-Please read the below requirements carefully.
-Make sure you fulfil all of them before filing an issue.
+The executable remains `yabai`, existing message domains and configuration files continue to work, and the launchd service and scripting-addition commands retain their upstream behavior.
 
-|Requirement|Note|
-|-:|:-|
-|Operating&nbsp;System&nbsp;Intel x86-64|Big Sur 11.0.0+, Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0+, and Tahoe 26.0+ is supported.|
-|Operating&nbsp;System&nbsp;Apple Silicon|Monterey 12.0.0+, Ventura 13.0.0+, Sonoma 14.0.0+, Sequoia 15.0+, and Tahoe 26.0+ is supported.|
-|Accessibility&nbsp;API|yabai must be given permission to utilize the Accessibility API and will request access upon launch. The application must be restarted after access has been granted.|
-|Screen Recording|yabai must be given Screen Recording permission if and only if you want to enable window animations, and will request access when necessary. The application must be restarted after access has been granted.|
-|System&nbsp;Preferences&nbsp;(macOS 11.x, 12.x)|In the Mission Control pane, the setting "Displays have separate Spaces" must be enabled.|
-|System&nbsp;Settings&nbsp;(macOS 13.x, 14.x, 15.x, 26.x)|In the Desktop & Dock tab, inside the Mission Control pane, the setting "Displays have separate Spaces" must be enabled.|
+The original upstream README is preserved in [README.upstream.md](README.upstream.md).
 
-Please also take note of the following caveats.
+Full command details are available in the [yabai command reference](doc/yabai.asciidoc).
 
-|Caveat|Note|
-|-:|:-|
-|System&nbsp;Integrity&nbsp;Protection (Optional)|System Integrity Protection can be (partially) disabled for yabai to inject a scripting addition into Dock.app for controlling windows with functions that require elevated privileges. This enables control of the window server, which is the sole owner of all window connections, and enables additional features of yabai.|
-|Code&nbsp;Signing|When building from source (or installing from HEAD), it is necessary to codesign the binary so it retains its accessibility and automation privileges when updated or rebuilt.|
-|Finder&nbsp;Desktop|Some people disable the Finder Desktop window using an undocumented defaults write command. This breaks focusing of empty spaces and should be avoided when using yabai. To re-activate the Finder Desktop, run: "defaults write com.apple.finder CreateDesktop -bool true".|
-|NSDocument-based&nbsp;Applications|Windows that utilize native macOS tabs such as Terminal and Finder, [do not behave correctly when creating tabs](https://github.com/asmvik/yabai/issues/68). Avoid creating tabs in these applications, consider alternatives that do not use NSDocument's tab system, or make these windows float using rules.|
-|System&nbsp;Preferences&nbsp;(macOS 11.x, 12.x)|In the Mission Control pane, the setting "Automatically rearrange Spaces based on most recent use" should be disabled for commands that rely on the ordering of spaces to work reliably.|
-|System&nbsp;Settings&nbsp;(macOS 13.x, 14.x, 15.x, 26.x)|In the Desktop & Dock tab, inside the Mission Control pane, the setting "Automatically rearrange Spaces based on most recent use" should be disabled for commands that rely on the ordering of spaces to work reliably.|
-|System&nbsp;Settings&nbsp;(macOS 14.x, 15.x, 26.x)|In the Desktop & Dock tab, inside the Desktop & Stage Manager pane, the setting "Show Items On Desktop" should be enabled for display and space focus commands to work reliably in multi-display configurations.|
-|System&nbsp;Settings&nbsp;(macOS 14.x, 15.x, 26.x)|In the Desktop & Dock tab, inside the Desktop & Stage Manager pane, the setting "Click wallpaper to reveal Desktop" should be set to "Only in Stage Manager" for display and space focus commands to work reliably.|
+## Highlights
 
-## License and Attribution
+### Native command palette
 
-yabai is licensed under the [&nearr;&nbsp;MIT&nbsp;License][yabai-license], a short and simple permissive license with conditions only requiring preservation of copyright and license notices.
-Licensed works, modifications, and larger works may be distributed under different terms and without source code.
+The native command palette exposes common display, space, window, and runtime-setting actions through stable identifiers.
 
-Thanks to [@fools-mate][gh-fools-mate] for creating a logo and banner for this project and making them available for free.
+It supports keyboard navigation, search, argument entry, inline results, and confirmation for destructive actions.
 
-Thanks to [@dominiklohmann][gh-dominiklohmann] for contributing great documentation, support, and more, for free.
+<p align="center">
+  <img width="760" src="assets/fork/command-palette.png" alt="Native yabai command palette">
+</p>
 
-## Disclaimer
+```sh
+# Open the palette on the display containing the pointer.
+yabai -m action --show
 
-Use at your own discretion.
-I take no responsibility if anything should happen to your machine while trying to install, test or otherwise use this software in any form.
-You acknowledge that you understand the potential risk that may come from disabling [&nearr;&nbsp;System&nbsp;Integrity&nbsp;Protection][external-about-sip] on your system, and I make no recommendation as to whether you should or should not disable System Integrity Protection.
+# Inspect the complete action catalog as JSON.
+yabai -m action --list
 
-<!-- Project internal links -->
-[yabai-license]: LICENSE.txt
-[yabai-examples]: https://github.com/asmvik/yabai/tree/master/examples
-[yabai-wiki]: https://github.com/asmvik/yabai/wiki
-[yabai-docs]: https://github.com/asmvik/yabai/blob/master/doc/yabai.asciidoc
+# Run stable actions directly from skhd or a shell.
+yabai -m action --run space.choose
+yabai -m action --run space.relabel
+yabai -m action --run space.layout-cycle
+```
 
-<!-- Links to other GitHub projects/users -->
-[gh-skhd]: https://github.com/asmvik/skhd
-[gh-fools-mate]: https://github.com/fools-mate
-[gh-dominiklohmann]: https://github.com/dominiklohmann
+The native space chooser searches workspace names, focuses existing workspaces, and creates a labeled workspace when no name matches.
 
-<!-- External links -->
-[external-about-sip]: https://support.apple.com/en-us/HT204899
+### Native stack selector
+
+Stack layouts and stacked BSP leaves receive a compact, clickable application-icon selector.
+
+The selector highlights the active window, focuses windows on click, supports window previews, and can be anchored independently for each stack.
+
+| Stack selector | Hover preview |
+|:--:|:--:|
+| <img width="120" src="assets/fork/stack-selector.png" alt="Stack selector with application icons"> | <img width="560" src="assets/fork/stack-selector-preview.png" alt="Stack selector native hover preview"> |
+
+```sh
+yabai -m config stack_selector on
+yabai -m config stack_selector_anchor vertical-center-left
+
+# Override the focused stack without changing the global default.
+yabai -m window --stack-selector-anchor horizontal-center-top
+```
+
+Right-clicking a selector opens a visual 3 by 4 anchor picker.
+
+### Dynamic island status UI
+
+Each display receives a native status island showing its current workspace and layout.
+
+The built-in display merges into the physical notch, while external displays use a continuous pill.
+
+<p align="center">
+  <img width="560" src="assets/fork/dynamic-island.png" alt="Per-display yabai dynamic island">
+</p>
+
+The workspace wing opens a per-display workspace selector.
+
+The layout wing switches the current space between stack, BSP, and float layouts.
+
+```sh
+yabai -m config status_island on
+yabai -m config status_island_workspace_order alphabetical
+```
+
+### Automatic empty-space cleanup
+
+The native space cleaner removes empty, non-visible user spaces after windows move, windows close, or the visible workspace changes.
+
+It preserves the currently visible workspace and the final user workspace on every display.
+
+```sh
+yabai -m config space_cleaner on
+```
+
+### macOS 27 scripting-addition support
+
+This fork updates yabai's private-API and scripting-addition integration for macOS 27 and later.
+
+Space creation, destruction, movement, focus, display placement, and animation control use the same public yabai commands as upstream.
+
+## Fork option reference
+
+### Action domain
+
+| Command | Accepted values |
+|:--|:--|
+| `yabai -m action --show` | Opens the searchable action catalog. |
+| `yabai -m action --list` | Returns every valid action identifier and its argument requirements as JSON. |
+| `yabai -m action --run <ACTION_ID> [ARGUMENT]` | `<ACTION_ID>` may be any identifier returned by `--list`. Native workflow identifiers are `space.choose`, `space.relabel`, and `space.layout-cycle`. |
+
+The layout-cycle workflow rotates through `stack`, `bsp`, and `float`.
+
+### Global settings
+
+| Setting | Accepted values | Default |
+|:--|:--|:--|
+| `stack_selector` | `on`, `off` | `off` |
+| `stack_selector_anchor` | See the anchor values below. | `vertical-center-left` |
+| `status_island` | `on`, `off` | `on` |
+| `status_island_workspace_order` | `index`, `alphabetical`, `creation` | `index` |
+| `space_cleaner` | `on`, `off` | `off` |
+
+### Stack-selector anchors
+
+The global `stack_selector_anchor` setting accepts these twelve values:
+
+```text
+vertical-top-left       vertical-center-left       vertical-bottom-left
+vertical-top-right      vertical-center-right      vertical-bottom-right
+horizontal-left-top     horizontal-center-top      horizontal-right-top
+horizontal-left-bottom  horizontal-center-bottom   horizontal-right-bottom
+```
+
+The per-stack command accepts the same twelve anchors plus three control values:
+
+```sh
+yabai -m window --stack-selector-anchor <anchor>
+yabai -m window --stack-selector-anchor next
+yabai -m window --stack-selector-anchor prev
+yabai -m window --stack-selector-anchor default
+```
+
+`next` and `prev` cycle through the twelve anchors.
+
+`default` removes the focused stack's override and returns it to the global `stack_selector_anchor` setting.
+
+### Dynamic-island selectors
+
+The workspace menu contains the spaces belonging to that display.
+
+The current workspace is listed first, and the remaining workspaces follow the configured `index`, `alphabetical`, or `creation` order.
+
+The layout menu accepts `stack`, `bsp`, and `float`.
+
+## Installation
+
+### Homebrew
+
+Release builds are distributed through the `ldelossa/yabai` Homebrew tap as a Formula.
+
+```sh
+brew install ldelossa/yabai/yabai
+```
+
+The installed command is still named `yabai`, so existing scripts, `skhd` bindings, configuration paths, and launchd workflows remain compatible.
+
+### Start the service
+
+Grant the installed `yabai` binary Accessibility permission in **System Settings → Privacy & Security → Accessibility**, then start the user service:
+
+```sh
+yabai --start-service
+```
+
+The standard service commands remain available:
+
+```sh
+yabai --start-service
+yabai --restart-service
+yabai --stop-service
+```
+
+### Scripting addition
+
+The scripting addition is optional, but it is required for privileged space-management functionality such as creating, destroying, moving, and directly focusing spaces.
+
+It has the same SIP and sudo requirements as upstream yabai.
+
+After installing or upgrading the Formula, load the matching scripting addition with:
+
+```sh
+sudo yabai --load-sa
+```
+
+Reload it after Dock restarts, after rebooting, or after replacing the installed yabai binary.
+
+For SIP requirements and a hash-pinned passwordless sudo rule, follow the upstream [scripting-addition installation guide](https://github.com/asmvik/yabai/wiki/Installing-yabai-%28latest-release%29#configure-scripting-addition).
+
+## Suggested configuration
+
+```sh
+yabai -m config                                 \
+    layout                       stack          \
+    stack_selector               on             \
+    status_island                on             \
+    status_island_workspace_order alphabetical  \
+    space_cleaner                on
+```
+
+Example `skhd` bindings:
+
+```sh
+alt - a : yabai -m action --show
+alt - w : yabai -m action --run space.choose
+alt - r : yabai -m action --run space.relabel
+alt - o : yabai -m action --run space.layout-cycle
+```
+
+## Compatibility
+
+| Area | Compatibility |
+|:--|:--|
+| Binary and IPC | Uses the existing `yabai` executable and `yabai -m` message interface. |
+| Configuration | Existing `yabairc`, rules, signals, queries, and selectors remain supported. |
+| Keyboard bindings | Existing `skhd` commands remain supported. |
+| Service management | Uses upstream `--start-service`, `--restart-service`, and `--stop-service`. |
+| Scripting addition | Uses upstream `sudo yabai --load-sa` workflow with a macOS 27-compatible payload. |
+| Operating system | macOS 27 and later only. |
+
+## Upstream documentation
+
+This fork intentionally does not duplicate the complete yabai manual.
+
+Use these references for the full upstream feature set and configuration model:
+
+- [Preserved upstream README](README.upstream.md)
+- [Command reference](doc/yabai.asciidoc)
+- [Upstream wiki](https://github.com/asmvik/yabai/wiki)
+- [Upstream changelog](https://github.com/asmvik/yabai/blob/master/CHANGELOG.md)
+- [Upstream project](https://github.com/asmvik/yabai)
+
+## Maintenance model
+
+The fork's `master` branch is maintained as a small patch stack rebased onto `upstream/master`.
+
+Fork releases are cut from tested rebases and published separately from upstream yabai releases.
+
+## License and attribution
+
+This fork remains licensed under the [MIT License](LICENSE.txt).
+
+The original yabai project, documentation, artwork, and core implementation are maintained by [asmvik/yabai](https://github.com/asmvik/yabai) and its contributors.
+
+The fork preserves upstream copyright and attribution.
