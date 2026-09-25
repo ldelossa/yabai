@@ -193,7 +193,9 @@ static void space_workflow_relabel(struct space_workflow_request *request)
     uint64_t sid = request->sid ? request->sid : space_manager_active_space();
     struct space_label *existing = space_manager_get_label_for_space(&g_space_manager, sid);
     if (existing) space_manager_remove_label_for_space(&g_space_manager, sid);
-    if (request->text && *request->text) space_manager_set_label_for_space(&g_space_manager, sid, request->text);
+    // The manager takes ownership of the label, so hand it a copy. The
+    // request cleanup below frees request->text after the relabel completes.
+    if (request->text && *request->text) space_manager_set_label_for_space(&g_space_manager, sid, space_workflow_copy_string(request->text));
     space_workflow_deliver_result("", true, true);
 }
 
