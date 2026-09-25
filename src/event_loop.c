@@ -247,6 +247,8 @@ static EVENT_HANDLER(APPLICATION_LAUNCHED)
     if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
         update_window_notifications();
     }
+
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(APPLICATION_TERMINATED)
@@ -341,6 +343,8 @@ static EVENT_HANDLER(APPLICATION_TERMINATED)
     if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
         update_window_notifications();
     }
+
+    status_island_invalidate();
 
 out:
     process_destroy(process);
@@ -600,6 +604,8 @@ static EVENT_HANDLER(WINDOW_CREATED)
     if (workspace_is_macos_sequoia() || workspace_is_macos_tahoe()) {
         update_window_notifications();
     }
+
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(WINDOW_DESTROYED)
@@ -635,6 +641,7 @@ static EVENT_HANDLER(WINDOW_DESTROYED)
     }
 
     space_cleaner_run();
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(WINDOW_FOCUSED)
@@ -872,6 +879,7 @@ static EVENT_HANDLER(WINDOW_MINIMIZED)
     }
 
     event_signal_push(SIGNAL_WINDOW_MINIMIZED, window);
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(WINDOW_DEMINIMIZED)
@@ -923,6 +931,7 @@ static EVENT_HANDLER(WINDOW_DEMINIMIZED)
     }
 
     event_signal_push(SIGNAL_WINDOW_DEMINIMIZED, window);
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(WINDOW_TITLE_CHANGED)
@@ -981,7 +990,7 @@ static EVENT_HANDLER(SLS_SPACE_CREATED)
         space_manager_find_view(&g_space_manager, sid);
         space_workflow_handle_space_created(sid);
         event_signal_push(SIGNAL_SPACE_CREATED, context);
-        status_island_refresh();
+        status_island_invalidate();
     }
 }
 
@@ -996,7 +1005,7 @@ static EVENT_HANDLER(SLS_SPACE_DESTROYED)
         view_destroy(view);
         free(view);
         event_signal_push(SIGNAL_SPACE_DESTROYED, context);
-        status_island_refresh();
+        status_island_invalidate();
     }
 }
 
@@ -1035,7 +1044,7 @@ static EVENT_HANDLER(SPACE_CHANGED)
     }
 
     stack_selector_update_all();
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_SPACE_CHANGED, NULL);
     space_cleaner_run();
 }
@@ -1090,7 +1099,7 @@ static EVENT_HANDLER(DISPLAY_CHANGED)
     }
 
     stack_selector_update_all();
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_DISPLAY_CHANGED, NULL);
 }
 
@@ -1101,7 +1110,7 @@ static EVENT_HANDLER(DISPLAY_ADDED)
     space_manager_handle_display_add(&g_space_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, did);
     stack_selector_update_all();
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_DISPLAY_ADDED, context);
 }
 
@@ -1112,7 +1121,7 @@ static EVENT_HANDLER(DISPLAY_REMOVED)
     display_manager_remove_label_for_display(&g_display_manager, did);
     window_manager_handle_display_add_and_remove(&g_space_manager, &g_window_manager, display_manager_main_display_id());
     stack_selector_update_all();
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_DISPLAY_REMOVED, context);
 }
 
@@ -1121,7 +1130,7 @@ static EVENT_HANDLER(DISPLAY_MOVED)
     uint32_t did = (uint32_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid(&g_space_manager);
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_DISPLAY_MOVED, context);
 }
 
@@ -1130,7 +1139,7 @@ static EVENT_HANDLER(DISPLAY_RESIZED)
     uint32_t did = (uint32_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, did);
     space_manager_mark_spaces_invalid_for_display(&g_space_manager, did);
-    status_island_refresh();
+    status_island_invalidate();
     event_signal_push(SIGNAL_DISPLAY_RESIZED, context);
 }
 
@@ -1565,6 +1574,7 @@ static EVENT_HANDLER(MISSION_CONTROL_EXIT)
     event_signal_push(SIGNAL_MISSION_CONTROL_EXIT, (void*)(uintptr_t)g_mission_control_mode);
     g_mission_control_mode = MISSION_CONTROL_MODE_INACTIVE;
     stack_selector_update_all();
+    status_island_invalidate();
 }
 
 static EVENT_HANDLER(DOCK_DID_RESTART)
@@ -1742,6 +1752,7 @@ static void *event_loop_run(void *context)
             }
 
             event_signal_flush();
+            status_island_flush();
             ts_reset();
 
             profile_end_and_print();

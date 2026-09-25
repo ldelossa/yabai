@@ -1580,7 +1580,7 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                         view->layout = VIEW_BSP;
                         view_clear(view);
                         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, sel_sid);
-                        status_island_refresh();
+                        status_island_invalidate();
                     } else {
                         daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
                     }
@@ -1590,7 +1590,7 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                         view->layout = VIEW_STACK;
                         view_clear(view);
                         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, sel_sid);
-                        status_island_refresh();
+                        status_island_invalidate();
                     } else {
                         daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
                     }
@@ -1599,7 +1599,7 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                         view_set_flag(view, VIEW_LAYOUT);
                         view->layout = VIEW_FLOAT;
                         view_clear(view);
-                        status_island_refresh();
+                        status_island_invalidate();
                     } else {
                         daemon_fail(rsp, "cannot set layout for a macOS fullscreen space!\n");
                     }

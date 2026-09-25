@@ -166,7 +166,7 @@ struct space_label *space_manager_get_space_for_label(struct space_manager *sm, 
     return NULL;
 }
 
-bool space_manager_remove_label_for_space(struct space_manager *sm, uint64_t sid)
+static bool space_manager_remove_label_for_space_without_refresh(struct space_manager *sm, uint64_t sid)
 {
     for (int i = 0; i < buf_len(sm->labels); ++i) {
         struct space_label *space_label = &sm->labels[i];
@@ -180,9 +180,16 @@ bool space_manager_remove_label_for_space(struct space_manager *sm, uint64_t sid
     return false;
 }
 
+bool space_manager_remove_label_for_space(struct space_manager *sm, uint64_t sid)
+{
+    bool removed = space_manager_remove_label_for_space_without_refresh(sm, sid);
+    if (removed) status_island_invalidate();
+    return removed;
+}
+
 void space_manager_set_label_for_space(struct space_manager *sm, uint64_t sid, char *label)
 {
-    space_manager_remove_label_for_space(sm, sid);
+    space_manager_remove_label_for_space_without_refresh(sm, sid);
 
     for (int i = 0; i < buf_len(sm->labels); ++i) {
         struct space_label *space_label = &sm->labels[i];
@@ -197,6 +204,8 @@ void space_manager_set_label_for_space(struct space_manager *sm, uint64_t sid, c
         .sid   = sid,
         .label = label
     }));
+
+    status_island_invalidate();
 }
 
 void space_manager_set_layout_for_space(struct space_manager *sm, uint64_t sid, enum view_type layout)
@@ -209,7 +218,7 @@ void space_manager_set_layout_for_space(struct space_manager *sm, uint64_t sid, 
         window_manager_validate_and_check_for_windows_on_space(sm, &g_window_manager, sid);
     }
 
-    status_island_refresh();
+    status_island_invalidate();
 }
 
 bool space_manager_set_gap_for_space(struct space_manager *sm, uint64_t sid, int type, int gap)
@@ -274,7 +283,7 @@ void space_manager_set_layout_for_all_spaces(struct space_manager *sm, enum view
         }
     })
 
-    status_island_refresh();
+    status_island_invalidate();
 }
 
 void space_manager_set_window_gap_for_all_spaces(struct space_manager *sm, int window_gap)
@@ -685,6 +694,8 @@ void space_manager_move_window_list_to_space(uint64_t sid, uint32_t *window_list
         SLSSetWindowListWorkspace(g_connection, window_list, window_count, 0x79616265);
         SLSSpaceSetCompatID(g_connection, sid, 0x0);
     }
+
+    status_island_invalidate();
 }
 
 void space_manager_move_window_to_space(uint64_t sid, struct window *window)
@@ -706,6 +717,8 @@ void space_manager_move_window_to_space(uint64_t sid, struct window *window)
         SLSSetWindowListWorkspace(g_connection, &window->id, 1, 0x79616265);
         SLSSpaceSetCompatID(g_connection, sid, 0x0);
     }
+
+    status_island_invalidate();
 }
 
 static inline uint64_t space_manager_find_first_user_space_for_display(uint32_t did)
@@ -849,7 +862,10 @@ enum space_op_error space_manager_swap_space_with_space(uint64_t acting_sid, uin
         }
     }
 
-    return success ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    if (!success) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+
+    status_island_invalidate();
+    return SPACE_OP_ERROR_SUCCESS;
 }
 
 enum space_op_error space_manager_move_space_to_space(uint64_t acting_sid, uint64_t selector_sid)
@@ -889,7 +905,10 @@ enum space_op_error space_manager_move_space_to_space(uint64_t acting_sid, uint6
         }
     }
 
-    return success ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    if (!success) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+
+    status_island_invalidate();
+    return SPACE_OP_ERROR_SUCCESS;
 }
 
 enum space_op_error space_manager_move_space_to_display(struct space_manager *sm, uint64_t sid, uint32_t did)
@@ -920,6 +939,7 @@ enum space_op_error space_manager_move_space_to_display(struct space_manager *sm
         if (focus_space) {
             space_manager_focus_space(sid);
         }
+        status_island_invalidate();
         return SPACE_OP_ERROR_SUCCESS;
     }
 
@@ -1032,6 +1052,7 @@ enum space_op_error space_manager_switch_space(uint64_t sid)
     if (cur_did != did) {
         space_manager_swap_space_with_space_on_display(cur_did, cur_sid, did, sid);
         display_manager_focus_display(cur_did, cur_sid);
+        status_island_invalidate();
         return SPACE_OP_ERROR_SUCCESS;
     }
 
@@ -1060,6 +1081,7 @@ enum space_op_error space_manager_destroy_space(uint64_t sid)
         window_manager_validate_and_check_for_windows_on_space(&g_space_manager, &g_window_manager, first_sid);
     }
 
+    status_island_invalidate();
     return SPACE_OP_ERROR_SUCCESS;
 }
 
@@ -1072,7 +1094,10 @@ enum space_op_error space_manager_add_space(uint64_t sid)
     bool is_animating = display_manager_display_is_animating(space_display_id(sid));
     if (is_animating) return SPACE_OP_ERROR_DISPLAY_IS_ANIMATING;
 
-    return scripting_addition_create_space(sid) ? SPACE_OP_ERROR_SUCCESS : SPACE_OP_ERROR_SCRIPTING_ADDITION;
+    if (!scripting_addition_create_space(sid)) return SPACE_OP_ERROR_SCRIPTING_ADDITION;
+
+    status_island_invalidate();
+    return SPACE_OP_ERROR_SUCCESS;
 }
 
 void space_manager_assign_process_to_space(pid_t pid, uint64_t sid)

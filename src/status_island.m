@@ -5,6 +5,7 @@ extern struct space_manager g_space_manager;
 
 bool g_status_island_enabled = true;
 enum status_island_workspace_order g_status_island_workspace_order = STATUS_ISLAND_ORDER_INDEX;
+static bool g_status_island_dirty;
 
 #define STATUS_ISLAND_HEIGHT 30.0f
 #define STATUS_ISLAND_WING_WIDTH 108.0f
@@ -1015,12 +1016,26 @@ void status_island_set_enabled(bool enabled)
 void status_island_set_workspace_order(enum status_island_workspace_order order)
 {
     g_status_island_workspace_order = order;
+    status_island_invalidate();
+}
+
+void status_island_invalidate(void)
+{
+    if (!g_status_island_enabled) return;
+    __atomic_store_n(&g_status_island_dirty, true, __ATOMIC_RELEASE);
+}
+
+void status_island_flush(void)
+{
+    if (!__atomic_exchange_n(&g_status_island_dirty, false, __ATOMIC_ACQ_REL)) return;
     status_island_refresh();
 }
 
 void status_island_refresh(void)
 {
     if (!g_status_island_enabled) return;
+
+    __atomic_store_n(&g_status_island_dirty, false, __ATOMIC_RELEASE);
 
     struct space_workflow_snapshot *snapshot = space_workflow_create_space_snapshot();
     if (!snapshot) return;

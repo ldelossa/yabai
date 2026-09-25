@@ -363,7 +363,6 @@ void space_workflow_handle_request(void *context)
             view_set_flag(view, VIEW_LAYOUT);
             space_manager_set_layout_for_space(&g_space_manager, sid, layout);
         }
-        status_island_refresh();
         space_workflow_deliver_result("", true, true);
     } break;
     case SPACE_WORKFLOW_CREATE_TIMEOUT:
