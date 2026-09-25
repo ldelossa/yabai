@@ -1726,6 +1726,11 @@ static EVENT_HANDLER(DAEMON_MESSAGE)
 
     socket_close(param1);
 }
+
+static EVENT_HANDLER(STATUS_ISLAND_REFRESH)
+{
+    status_island_refresh();
+}
 #pragma clang diagnostic pop
 
 static void *event_loop_run(void *context)
@@ -1752,7 +1757,6 @@ static void *event_loop_run(void *context)
             }
 
             event_signal_flush();
-            status_island_flush();
             ts_reset();
 
             profile_end_and_print();

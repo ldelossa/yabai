@@ -18,7 +18,6 @@ bool status_island_is_enabled(void);
 void status_island_set_enabled(bool enabled);
 void status_island_set_workspace_order(enum status_island_workspace_order order);
 void status_island_invalidate(void);
-void status_island_flush(void);
 void status_island_refresh(void);
 
 #endif

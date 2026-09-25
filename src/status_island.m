@@ -898,7 +898,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 }
 + (instancetype)sharedController;
 - (void)refreshWithSnapshot:(struct space_workflow_snapshot *)snapshot;
-- (void)setEnabled:(bool)enabled;
+- (void)hide;
 - (void)screenParametersChanged:(NSNotification *)note;
 @end
 
@@ -936,7 +936,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
 - (void)screenParametersChanged:(NSNotification *)__unused note
 {
-    status_island_refresh();
+    status_island_invalidate();
 }
 
 - (void)refreshWithSnapshot:(struct space_workflow_snapshot *)snapshot
@@ -969,14 +969,10 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     [self addMouseMonitor];
 }
 
-- (void)setEnabled:(bool)enabled
+- (void)hide
 {
-    if (enabled) {
-        status_island_refresh();
-    } else {
-        for (status_island *island in _islands.allValues) {
-            [island hide];
-        }
+    for (status_island *island in _islands.allValues) {
+        [island hide];
     }
 }
 
@@ -1008,9 +1004,13 @@ void status_island_set_enabled(bool enabled)
     if (g_status_island_enabled == enabled) return;
     g_status_island_enabled = enabled;
 
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[status_island_controller sharedController] setEnabled:enabled];
-    });
+    if (enabled) {
+        status_island_invalidate();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[status_island_controller sharedController] hide];
+        });
+    }
 }
 
 void status_island_set_workspace_order(enum status_island_workspace_order order)
@@ -1022,20 +1022,17 @@ void status_island_set_workspace_order(enum status_island_workspace_order order)
 void status_island_invalidate(void)
 {
     if (!g_status_island_enabled) return;
-    __atomic_store_n(&g_status_island_dirty, true, __ATOMIC_RELEASE);
-}
 
-void status_island_flush(void)
-{
-    if (!__atomic_exchange_n(&g_status_island_dirty, false, __ATOMIC_ACQ_REL)) return;
-    status_island_refresh();
+    if (!__atomic_exchange_n(&g_status_island_dirty, true, __ATOMIC_ACQ_REL)) {
+        event_loop_post(&g_event_loop, STATUS_ISLAND_REFRESH, NULL, 0);
+    }
 }
 
 void status_island_refresh(void)
 {
-    if (!g_status_island_enabled) return;
-
     __atomic_store_n(&g_status_island_dirty, false, __ATOMIC_RELEASE);
+
+    if (!g_status_island_enabled) return;
 
     struct space_workflow_snapshot *snapshot = space_workflow_create_space_snapshot();
     if (!snapshot) return;
