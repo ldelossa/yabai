@@ -54,6 +54,8 @@ static void window_did_receive_focus(struct window_manager *wm, struct mouse_sta
     wm->focused_window_psn = window->application->psn;
     ms->ffm_window_id = 0;
 
+    if (window_manager_scratchpad_handle_window_focused(wm, window)) return;
+
     struct view *view = window_manager_find_managed_window(&g_window_manager, window);
     if (!view) return;
 
@@ -194,6 +196,8 @@ static EVENT_HANDLER(APPLICATION_LAUNCHED)
 
     for (int i = 0; i < window_count; ++i) {
         struct window *window = window_list[i];
+
+        window_manager_scratchpad_track_window_created(&g_window_manager, window);
 
         if (window_manager_should_manage_window(window) && !window_manager_find_managed_window(&g_window_manager, window)) {
             if (default_origin) sid = window_space(window->id);
@@ -571,6 +575,8 @@ static EVENT_HANDLER(WINDOW_CREATED)
     struct window *window = window_manager_create_and_add_window(&g_space_manager, &g_window_manager, application, context, window_id, true);
     if (!window) return;
 
+    window_manager_scratchpad_track_window_created(&g_window_manager, window);
+
     int rule_len = buf_len(g_window_manager.rules);
     for (int i = 0; i < rule_len; ++i) {
         if (rule_check_flag(&g_window_manager.rules[i], RULE_ONE_SHOT_REMOVE)) {
@@ -709,6 +715,9 @@ static EVENT_HANDLER(WINDOW_MOVED)
     event_signal_push(SIGNAL_WINDOW_MOVED, window);
     bool windowed_fullscreen = CGRectEqualToRect(window->windowed_frame, window->frame);
     window->frame.origin = new_origin;
+    if (!g_mouse_state.window || g_mouse_state.window != window) {
+        window_manager_scratchpad_window_frame_changed(&g_window_manager, window, window->frame);
+    }
 
     if (!windowed_fullscreen) {
         window_clear_flag(window, WINDOW_WINDOWED);
@@ -805,6 +814,10 @@ static EVENT_HANDLER(WINDOW_RESIZED)
             window_manager_add_managed_window(&g_window_manager, window, view);
         }
     } else if (!was_fullscreen == !is_fullscreen) {
+        if (!g_mouse_state.window || g_mouse_state.window != window) {
+            window_manager_scratchpad_window_frame_changed(&g_window_manager, window, new_frame);
+        }
+
         if (g_mouse_state.current_action == MOUSE_MODE_MOVE && g_mouse_state.window == window) {
             g_mouse_state.window_frame.size = g_mouse_state.window->frame.size;
         }
@@ -912,6 +925,10 @@ static EVENT_HANDLER(WINDOW_DEMINIMIZED)
     if (window->subrole) CFRelease(window->subrole);
     window->subrole = window_ax_subrole(window);
 
+    if (window->scratchpad) {
+        window_manager_toggle_scratchpad_window(&g_window_manager, window, 3);
+    }
+
     uint64_t sid = space_manager_active_space();
     if (space_manager_is_window_on_space(sid, window)) {
         debug("%s: window %s %d is deminimized on active space\n", __FUNCTION__, window->application->name, window->id);
@@ -958,6 +975,9 @@ static EVENT_HANDLER(SLS_WINDOW_ORDERED)
 {
     uint32_t wid = (uint64_t)(intptr_t) context;
     debug("%s: %d\n", __FUNCTION__, wid);
+    struct window *window = window_manager_find_window(&g_window_manager, wid);
+    if (window && window_manager_scratchpad_handle_window_ordered(&g_window_manager, window)) return;
+
     struct window_node *node = table_find(&g_window_manager.insert_feedback, &wid);
     if (node) SLSOrderWindow(g_connection, node->feedback_window.id, 1, node->window_order[0]);
 }
@@ -1195,14 +1215,35 @@ static EVENT_HANDLER(MOUSE_UP)
         goto err;
     }
 
+    if (g_mouse_state.window->scratchpad) {
+        CGRect frame = window_ax_frame(g_mouse_state.window);
+        g_mouse_state.window->frame = frame;
+        window_manager_scratchpad_window_frame_changed(&g_window_manager, g_mouse_state.window, frame);
+        goto err;
+    }
+
     CGPoint point = CGEventGetLocation(context);
     debug("%s: %.2f, %.2f\n", __FUNCTION__, point.x, point.y);
 
-    struct view *src_view = window_manager_find_managed_window(&g_window_manager, g_mouse_state.window);
-    if (!src_view) goto err;
-
     struct mouse_window_info info;
     mouse_window_info_populate(&g_mouse_state, &info);
+
+    if (info.changed_position && !g_mouse_state.window->scratchpad) {
+        struct window *drop_target = window_manager_find_window_at_point_filtering_window(&g_window_manager, point, g_mouse_state.window->id);
+        if (!drop_target) drop_target = window_manager_find_window_at_point(&g_window_manager, point);
+        if (drop_target && drop_target != g_mouse_state.window && drop_target->scratchpad &&
+            window_manager_scratchpad_can_assign_window(g_mouse_state.window)) {
+            struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(&g_window_manager, drop_target);
+            if (scratchpad) {
+                char *label = strdup(scratchpad->label);
+                window_manager_assign_scratchpad_for_window(&g_window_manager, g_mouse_state.window, label, SCRATCHPAD_ASSIGN_DRAG);
+            }
+            goto err;
+        }
+    }
+
+    struct view *src_view = window_manager_find_managed_window(&g_window_manager, g_mouse_state.window);
+    if (!src_view) goto err;
 
     if (info.changed_position && !info.changed_size) {
         uint64_t cursor_sid = display_space_id(display_manager_point_display_id(point));
@@ -1652,6 +1693,14 @@ static EVENT_HANDLER(STACK_SELECTOR_SELECTED)
     struct window *window = window_manager_find_window(&g_window_manager, window_id);
     if (!window) return;
 
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(&g_window_manager, window);
+    if (scratchpad) {
+        if (scratchpad->node.window_count <= 1) return;
+        window_manager_toggle_scratchpad_window(&g_window_manager, window, 3);
+        stack_selector_update_node_with_active_window(&scratchpad->node, window_id);
+        return;
+    }
+
     struct view *view = window_manager_find_managed_window(&g_window_manager, window);
     if (!view || !space_is_visible(view->sid)) return;
 
@@ -1669,8 +1718,11 @@ static EVENT_HANDLER(STACK_SELECTOR_ANCHOR_CHANGED)
     struct window *window = window_manager_find_window(&g_window_manager, window_id);
     if (!window) return;
 
-    struct view *view = window_manager_find_managed_window(&g_window_manager, window);
-    struct window_node *node = view ? view_find_window_node(view, window_id) : NULL;
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(&g_window_manager, window);
+    struct view *view = scratchpad ? NULL : window_manager_find_managed_window(&g_window_manager, window);
+    struct window_node *node = scratchpad ? &scratchpad->node
+                             : view ? view_find_window_node(view, window_id)
+                             : NULL;
     if (!node || node->window_count <= 1) return;
 
     if (anchor == STACK_SELECTOR_ANCHOR_COUNT) {

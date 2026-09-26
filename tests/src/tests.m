@@ -13,6 +13,7 @@ typedef TEST_SIG(function);
 
 #include "area.c"
 #include "command_palette.c"
+#include "scratch_stack.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -22,7 +23,10 @@ typedef TEST_SIG(function);
     TEST_ENTRY(command_palette_action_search)                  \
     TEST_ENTRY(command_palette_message_construction)           \
     TEST_ENTRY(command_palette_catalog_integrity)              \
-    TEST_ENTRY(space_workflow_layout_cycle)
+    TEST_ENTRY(space_workflow_layout_cycle)                    \
+    TEST_ENTRY(scratch_stack_frame_is_initialized_once)        \
+    TEST_ENTRY(scratch_stack_tracks_membership_and_mru)        \
+    TEST_ENTRY(scratch_stack_removal_preserves_frame)
 
 static struct {
     char *name;

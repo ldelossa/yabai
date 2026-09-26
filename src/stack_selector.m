@@ -1185,6 +1185,7 @@ void stack_selector_update_all(void)
     table_for (struct view *view, g_space_manager.view, {
         stack_selector_update_tree(view->root);
     })
+    window_manager_update_scratchpad_selectors(&g_window_manager);
 }
 
 void stack_selector_hide_all(void)

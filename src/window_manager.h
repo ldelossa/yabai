@@ -65,10 +65,38 @@ static const char *window_origin_mode_str[] =
     "cursor"
 };
 
+enum scratchpad_assignment
+{
+    SCRATCHPAD_ASSIGN_COMMAND,
+    SCRATCHPAD_ASSIGN_RULE,
+    SCRATCHPAD_ASSIGN_AUTOMATIC,
+    SCRATCHPAD_ASSIGN_DRAG,
+};
+
+enum scratchpad_transition
+{
+    SCRATCHPAD_TRANSITION_IDLE,
+    SCRATCHPAD_TRANSITION_SHOWING,
+    SCRATCHPAD_TRANSITION_HIDING,
+};
+
+struct scratchpad_member
+{
+    struct window *window;
+    CGRect restore_frame;
+    CGRect expected_frame;
+    bool frame_sync_pending;
+    bool frame_sync_observed_origin;
+    bool frame_sync_observed_size;
+};
+
 struct scratchpad
 {
     char *label;
-    struct window *window;
+    struct scratchpad_member *members;
+    struct window_node node;
+    enum scratchpad_transition transition;
+    bool visible;
 };
 
 struct window_manager
@@ -99,7 +127,10 @@ struct window_manager
     float window_animation_duration;
     int window_animation_easing;
     struct rgba_color insert_feedback_color;
-    struct scratchpad *scratchpad_window;
+    struct scratchpad *scratchpads;
+    char *scratchpad_capture_label;
+    uint32_t scratchpad_capture_window_id;
+    char *scratchpad_active_label;
 };
 
 void window_manager_query_window_rules(FILE *rsp);
@@ -201,10 +232,18 @@ void window_manager_toggle_window_windowed_fullscreen(struct window *window);
 void window_manager_toggle_window_native_fullscreen(struct window *window);
 void window_manager_toggle_window_expose(struct window *window);
 void window_manager_toggle_window_pip(struct space_manager *sm, struct window *window);
+struct scratchpad *window_manager_find_scratchpad_for_window(struct window_manager *wm, struct window *window);
 bool window_manager_toggle_scratchpad_window_by_label(struct window_manager *wm, char *label);
 bool window_manager_toggle_scratchpad_window(struct window_manager *wm, struct window *window, int forced_mode);
+bool window_manager_assign_scratchpad_for_window(struct window_manager *wm, struct window *window, char *label, enum scratchpad_assignment assignment);
 bool window_manager_set_scratchpad_for_window(struct window_manager *wm, struct window *window, char *label);
+bool window_manager_scratchpad_can_assign_window(struct window *window);
 bool window_manager_remove_scratchpad_for_window(struct window_manager *wm, struct window *window, bool unfloat);
+bool window_manager_scratchpad_window_frame_changed(struct window_manager *wm, struct window *window, CGRect frame);
+void window_manager_scratchpad_track_window_created(struct window_manager *wm, struct window *window);
+bool window_manager_scratchpad_handle_window_focused(struct window_manager *wm, struct window *window);
+bool window_manager_scratchpad_handle_window_ordered(struct window_manager *wm, struct window *window);
+void window_manager_update_scratchpad_selectors(struct window_manager *wm);
 void window_manager_scratchpad_recover_windows(void);
 void window_manager_wait_for_native_fullscreen_transition(struct window *window);
 void window_manager_validate_and_check_for_windows_on_space(struct space_manager *sm, struct window_manager *wm, uint64_t sid);

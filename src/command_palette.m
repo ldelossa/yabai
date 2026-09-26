@@ -50,7 +50,8 @@ const struct command_palette_action g_command_palette_actions[] =
     COMMAND_PALETTE_ACTION("window.opacity", "Set Window Opacity", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_OPACITY, "0.0 .. 1.0", "Set the focused window opacity.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
     COMMAND_PALETTE_ACTION("window.raise", "Raise Window", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_RAISE, NULL, "Raise the focused window.", COMMAND_PALETTE_ARGUMENT_NONE, false),
     COMMAND_PALETTE_ACTION("window.lower", "Lower Window", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_LOWER, NULL, "Lower the focused window.", COMMAND_PALETTE_ARGUMENT_NONE, false),
-    COMMAND_PALETTE_ACTION("window.scratchpad", "Set Window Scratchpad", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_SCRATCHPAD, "LABEL | recover", "Set a scratchpad label, leave empty to clear, or recover all scratchpads.", COMMAND_PALETTE_ARGUMENT_OPTIONAL, false),
+    COMMAND_PALETTE_ACTION("window.scratchpad", "Add Window to Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_SCRATCHPAD, "LABEL", "Add the focused window to a named scratch stack, leave empty to remove it, or enter recover to recover all stacks.", COMMAND_PALETTE_ARGUMENT_OPTIONAL, false),
+    COMMAND_PALETTE_ACTION("window.scratchpad-toggle", "Toggle Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_TOGGLE, "SCRATCH_LABEL", "Show or hide every window in a named scratch stack.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
     COMMAND_PALETTE_ACTION("window.stack-selector-anchor", "Set Stack Selector Anchor", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_STACK_SELECTOR_ANCHOR, "anchor | next | prev | default", "Set the focused stack selector anchor.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
 
     COMMAND_PALETTE_ACTION("config.mouse-follows-focus", "Set Mouse Follows Focus", "Setting", DOMAIN_CONFIG, COMMAND_CONFIG_MFF, "on | off", "Move the pointer when window focus changes.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),

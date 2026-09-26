@@ -158,7 +158,7 @@ void window_manager_apply_rule_effects_to_window(struct space_manager *sm, struc
 
     if (effects->scratchpad) {
         char *scratchpad = string_copy(effects->scratchpad);
-        if (!window_manager_set_scratchpad_for_window(wm, window, scratchpad)) {
+        if (!window_manager_assign_scratchpad_for_window(wm, window, scratchpad, SCRATCHPAD_ASSIGN_RULE)) {
             free(scratchpad);
         }
     }
@@ -189,7 +189,10 @@ void window_manager_apply_manage_rules_to_window(struct space_manager *sm, struc
         }
     }
 
-    if (match) window_manager_apply_manage_rule_effects_to_window(sm, wm, window, &effects);
+    if (match) {
+        window->rule_matched = true;
+        window_manager_apply_manage_rule_effects_to_window(sm, wm, window, &effects);
+    }
 }
 
 void window_manager_apply_rules_to_window(struct space_manager *sm, struct window_manager *wm, struct window *window, char *window_title, char *window_role, char *window_subrole, bool one_shot_rules)
@@ -213,7 +216,10 @@ void window_manager_apply_rules_to_window(struct space_manager *sm, struct windo
         }
     }
 
-    if (match) window_manager_apply_rule_effects_to_window(sm, wm, window, &effects);
+    if (match) {
+        window->rule_matched = true;
+        window_manager_apply_rule_effects_to_window(sm, wm, window, &effects);
+    }
 }
 
 void window_manager_set_focus_follows_mouse(struct window_manager *wm, enum ffm_mode mode)
@@ -1057,12 +1063,18 @@ struct window *window_manager_find_recent_managed_window(struct window_manager *
     return window;
 }
 
+static struct window_node *window_manager_find_stack_node(struct space_manager *sm, struct window_manager *wm, struct window *window)
+{
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    if (scratchpad) return &scratchpad->node;
+
+    struct view *view = space_manager_find_view(sm, space_manager_active_space());
+    return view ? view_find_window_node(view, window->id) : NULL;
+}
+
 struct window *window_manager_find_prev_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
     if (!node) return NULL;
 
     for (int i = 1; i < node->window_count; ++i) {
@@ -1076,10 +1088,7 @@ struct window *window_manager_find_prev_window_in_stack(struct space_manager *sm
 
 struct window *window_manager_find_next_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
     if (!node) return NULL;
 
     for (int i = 0; i < node->window_count - 1; ++i) {
@@ -1093,46 +1102,28 @@ struct window *window_manager_find_next_window_in_stack(struct space_manager *sm
 
 struct window *window_manager_find_first_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
-    if (!node) return NULL;
-
-    return node->window_count > 1 ? window_manager_find_window(wm, node->window_list[0]) : NULL;
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
+    return node && node->window_count > 1 ? window_manager_find_window(wm, node->window_list[0]) : NULL;
 }
 
 struct window *window_manager_find_last_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
-    if (!node) return NULL;
-
-    return node->window_count > 1 ? window_manager_find_window(wm, node->window_list[node->window_count-1]) : NULL;
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
+    return node && node->window_count > 1 ? window_manager_find_window(wm, node->window_list[node->window_count-1]) : NULL;
 }
 
 struct window *window_manager_find_recent_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
-    if (!node) return NULL;
-
-    return node->window_count > 1 ? window_manager_find_window(wm, node->window_order[1]) : NULL;
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
+    return node && node->window_count > 1 ? window_manager_find_window(wm, node->window_order[1]) : NULL;
 }
 
 struct window *window_manager_find_window_in_stack(struct space_manager *sm, struct window_manager *wm, struct window *window, int index)
 {
-    struct view *view = space_manager_find_view(sm, space_manager_active_space());
-    if (!view) return NULL;
-
-    struct window_node *node = view_find_window_node(view, window->id);
-    if (!node) return NULL;
-
-    return node->window_count > 1 && in_range_ii(index, 1, node->window_count) ? window_manager_find_window(wm, node->window_list[index-1]) : NULL;
+    struct window_node *node = window_manager_find_stack_node(sm, wm, window);
+    return node && node->window_count > 1 && in_range_ii(index, 1, node->window_count)
+         ? window_manager_find_window(wm, node->window_list[index-1])
+         : NULL;
 }
 
 struct window *window_manager_find_largest_managed_window(struct space_manager *sm, struct window_manager *wm)
@@ -2430,62 +2421,356 @@ void window_manager_toggle_window_pip(struct space_manager *sm, struct window *w
     scripting_addition_scale_window(window->id, bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height);
 }
 
-static inline struct window *window_manager_find_scratchpad_window(struct window_manager *wm, char *label)
+static struct scratchpad *window_manager_find_scratchpad_by_label(struct window_manager *wm, char *label)
 {
-    for (int i = 0; i < buf_len(wm->scratchpad_window); ++i) {
-        if (string_equals(wm->scratchpad_window[i].label, label)) {
-            return wm->scratchpad_window[i].window;
-        }
+    if (!label) return NULL;
+
+    for (int i = 0; i < buf_len(wm->scratchpads); ++i) {
+        if (string_equals(wm->scratchpads[i].label, label)) return &wm->scratchpads[i];
     }
 
     return NULL;
 }
 
+struct scratchpad *window_manager_find_scratchpad_for_window(struct window_manager *wm, struct window *window)
+{
+    if (!window || !window->scratchpad) return NULL;
+    return window_manager_find_scratchpad_by_label(wm, window->scratchpad);
+}
+
+static int scratchpad_index_of_member(struct scratchpad *scratchpad, struct window *window)
+{
+    if (!scratchpad || !window) return -1;
+
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        if (scratchpad->members[i].window == window) return i;
+    }
+
+    return -1;
+}
+
+static void scratchpad_node_add_window(struct scratchpad *scratchpad, struct window *window)
+{
+    struct window_node *node = &scratchpad->node;
+    if (node->window_count == 0) {
+        node->window_list[0] = window->id;
+        node->window_order[0] = window->id;
+        node->window_count = 1;
+        return;
+    }
+
+    int insert_index = node->window_count;
+    for (int i = 0; i < node->window_count; ++i) {
+        if (node->window_list[i] == node->window_order[0]) {
+            insert_index = i + 1;
+            break;
+        }
+    }
+
+    if (insert_index < node->window_count) {
+        memmove(node->window_list + insert_index + 1,
+                node->window_list + insert_index,
+                sizeof(uint32_t) * (node->window_count - insert_index));
+    }
+
+    node->window_list[insert_index] = window->id;
+    memmove(node->window_order + 1, node->window_order, sizeof(uint32_t) * node->window_count);
+    node->window_order[0] = window->id;
+    ++node->window_count;
+}
+
+static void scratchpad_node_remove_window(struct scratchpad *scratchpad, struct window *window)
+{
+    struct window_node *node = &scratchpad->node;
+    bool removed_list = false;
+    bool removed_order = false;
+
+    for (int i = 0; i < node->window_count; ++i) {
+        if (!removed_list && node->window_list[i] == window->id) {
+            memmove(node->window_list + i,
+                    node->window_list + i + 1,
+                    sizeof(uint32_t) * (node->window_count - i - 1));
+            removed_list = true;
+        }
+
+        if (!removed_order && node->window_order[i] == window->id) {
+            memmove(node->window_order + i,
+                    node->window_order + i + 1,
+                    sizeof(uint32_t) * (node->window_count - i - 1));
+            removed_order = true;
+        }
+    }
+
+    if (removed_list && removed_order) {
+        --node->window_count;
+        node->window_list[node->window_count] = 0;
+        node->window_order[node->window_count] = 0;
+    }
+}
+
+static void scratchpad_initialize_frame(struct scratchpad *scratchpad, CGRect frame)
+{
+    if (!scratchpad || scratchpad->node.area.w > 0.0f || scratchpad->node.area.h > 0.0f) return;
+
+    scratchpad->node.area = (struct area) {
+        .x = frame.origin.x,
+        .y = frame.origin.y,
+        .w = frame.size.width,
+        .h = frame.size.height,
+    };
+}
+
+static void scratchpad_clamp_frame_to_display(struct scratchpad *scratchpad, uint32_t did)
+{
+    if (!scratchpad || !did) return;
+
+    CGRect bounds = display_bounds_constrained(did, false);
+    struct area *area = &scratchpad->node.area;
+    float maximum_x = CGRectGetMaxX(bounds) - area->w;
+    float maximum_y = CGRectGetMaxY(bounds) - area->h;
+
+    area->x = MIN(MAX(area->x, CGRectGetMinX(bounds)), MAX(CGRectGetMinX(bounds), maximum_x));
+    area->y = MIN(MAX(area->y, CGRectGetMinY(bounds)), MAX(CGRectGetMinY(bounds), maximum_y));
+}
+
+static void scratchpad_sync_frames(struct scratchpad *scratchpad)
+{
+    if (!scratchpad || !scratchpad->node.window_count) return;
+
+    struct area area = scratchpad->node.area;
+    struct window_capture *captures = NULL;
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        struct scratchpad_member *member = &scratchpad->members[i];
+        member->expected_frame = CGRectMake(area.x, area.y, area.w, area.h);
+        member->frame_sync_pending = true;
+        member->frame_sync_observed_origin = false;
+        member->frame_sync_observed_size = false;
+        buf_push(captures, ((struct window_capture) {
+            .window = member->window,
+            .x = area.x,
+            .y = area.y,
+            .w = area.w,
+            .h = area.h,
+        }));
+    }
+
+    window_manager_animate_window_list(captures, buf_len(captures));
+    buf_free(captures);
+}
+
+static void scratchpad_update_order(struct scratchpad *scratchpad, struct window *window)
+{
+    if (!scratchpad || !window) return;
+
+    struct window_node *node = &scratchpad->node;
+    for (int i = 0; i < node->window_count; ++i) {
+        if (node->window_order[i] != window->id) continue;
+        memmove(node->window_order + 1, node->window_order, sizeof(uint32_t) * i);
+        node->window_order[0] = window->id;
+        break;
+    }
+}
+
+static void scratchpad_set_active(struct window_manager *wm, char *label)
+{
+    if (!wm) return;
+    if (wm->scratchpad_active_label && label && string_equals(wm->scratchpad_active_label, label)) return;
+
+    free(wm->scratchpad_active_label);
+    wm->scratchpad_active_label = label && *label ? strdup(label) : NULL;
+}
+
+static void scratchpad_clear_active(struct window_manager *wm)
+{
+    if (!wm) return;
+    free(wm->scratchpad_active_label);
+    wm->scratchpad_active_label = NULL;
+}
+
+static bool scratchpad_all_windows_ordered(struct scratchpad *scratchpad, bool expected)
+{
+    if (!scratchpad) return false;
+
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        uint8_t ordered_in = 0;
+        SLSWindowIsOrderedIn(g_connection, scratchpad->members[i].window->id, &ordered_in);
+        if ((ordered_in != 0) != expected) return false;
+    }
+
+    return true;
+}
+
+static bool scratchpad_is_visible_on_active_space(struct scratchpad *scratchpad)
+{
+    uint64_t sid = space_manager_active_space();
+    if (!scratchpad || !sid || !scratchpad_all_windows_ordered(scratchpad, true)) return false;
+
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        struct window *window = scratchpad->members[i].window;
+        if (window_space(window->id) != sid && !window_is_sticky(window->id)) return false;
+    }
+
+    return true;
+}
+
+static bool scratchpad_present(struct window_manager *wm, struct scratchpad *scratchpad, struct window *active_window)
+{
+    if (!scratchpad || !scratchpad->node.window_count) return false;
+
+    uint64_t sid = space_manager_active_space();
+    if (!sid) return false;
+
+    if (!active_window || scratchpad_index_of_member(scratchpad, active_window) == -1) {
+        active_window = window_manager_find_window(wm, scratchpad->node.window_order[0]);
+    }
+    if (!active_window) return false;
+
+    scratchpad_update_order(scratchpad, active_window);
+    scratchpad_clamp_frame_to_display(scratchpad, space_display_id(sid));
+
+    scratchpad->visible = true;
+    scratchpad->transition = SCRATCHPAD_TRANSITION_SHOWING;
+    scratchpad_set_active(wm, scratchpad->label);
+
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        struct window *window = scratchpad->members[i].window;
+        if (window_space(window->id) != sid && !window_is_sticky(window->id)) {
+            space_manager_move_window_to_space(sid, window);
+        }
+    }
+
+    scratchpad_sync_frames(scratchpad);
+
+    for (int i = scratchpad->node.window_count - 1; i >= 0; --i) {
+        scripting_addition_order_window(scratchpad->node.window_order[i], 1, 0);
+    }
+
+    window_manager_focus_window_with_raise(&active_window->application->psn, active_window->id, active_window->ref);
+    stack_selector_update_node_with_active_window(&scratchpad->node, active_window->id);
+    return true;
+}
+
+static bool scratchpad_hide(struct window_manager *wm, struct scratchpad *scratchpad)
+{
+    if (!scratchpad || !scratchpad->node.window_count) return false;
+
+    uint64_t sid = space_manager_active_space();
+    struct window *active_window = window_manager_find_window(wm, scratchpad->node.window_order[0]);
+    struct window *next = active_window
+                        ? window_manager_find_window_on_space_by_rank_filtering_window(wm, sid, 1, active_window->id)
+                        : NULL;
+
+    scratchpad->visible = false;
+    scratchpad->transition = SCRATCHPAD_TRANSITION_HIDING;
+    scratchpad_clear_active(wm);
+    stack_selector_destroy_node(&scratchpad->node);
+
+    if (next && !next->scratchpad) {
+        window_manager_focus_window_with_raise(&next->application->psn, next->id, next->ref);
+    } else {
+        _SLPSSetFrontProcessWithOptions(&g_process_manager.finder_psn, 0, kCPSNoWindows);
+    }
+
+    for (int i = 0; i < buf_len(scratchpad->members); ++i) {
+        scripting_addition_order_window(scratchpad->members[i].window->id, 0, 0);
+    }
+
+    return true;
+}
+
 bool window_manager_toggle_scratchpad_window_by_label(struct window_manager *wm, char *label)
 {
-    struct window *window = window_manager_find_scratchpad_window(wm, label);
-    return window ? window_manager_toggle_scratchpad_window(wm, window, 0) : false;
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_by_label(wm, label);
+    if (!scratchpad) return false;
+
+    scratchpad->visible = scratchpad_is_visible_on_active_space(scratchpad);
+    return scratchpad->visible
+         ? scratchpad_hide(wm, scratchpad)
+         : scratchpad_present(wm, scratchpad, NULL);
 }
 
 bool window_manager_toggle_scratchpad_window(struct window_manager *wm, struct window *window, int forced_mode)
 {
     TIME_FUNCTION;
 
-    uint64_t sid = space_manager_active_space();
-    if (!sid) return false;
-
-    // TODO(asmvik): Both functions use the same underlying API and could be combined in a single function to reduce redundant work.
-    bool visible_space = window_space(window->id) == sid || window_is_sticky(window->id);
-
-    uint8_t ordered_in = 0;
-    SLSWindowIsOrderedIn(g_connection, window->id, &ordered_in);
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    if (!scratchpad) return false;
 
     switch (forced_mode) {
-    case 0: goto mode_0;
-    case 1: goto mode_1;
-    case 2: goto mode_2;
-    case 3: goto mode_3;
+    case 0:
+        scratchpad->visible = scratchpad_is_visible_on_active_space(scratchpad);
+        return scratchpad->visible
+             ? scratchpad_hide(wm, scratchpad)
+             : scratchpad_present(wm, scratchpad, window);
+    case 1: return scratchpad_hide(wm, scratchpad);
+    case 2:
+    case 3: return scratchpad_present(wm, scratchpad, window);
+    default: return false;
+    }
+}
+
+bool window_manager_assign_scratchpad_for_window(struct window_manager *wm, struct window *window, char *label, enum scratchpad_assignment assignment)
+{
+    if (!window || !label) return false;
+
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_by_label(wm, label);
+    bool existing_stack = scratchpad != NULL;
+    bool stack_was_visible = existing_stack && scratchpad_is_visible_on_active_space(scratchpad);
+    struct scratchpad *current = window_manager_find_scratchpad_for_window(wm, window);
+    if (current == scratchpad && current) {
+        free(label);
+        return true;
+    }
+    if (scratchpad && scratchpad->node.window_count >= NODE_MAX_WINDOW_COUNT) return false;
+
+    CGRect restore_frame = window->frame;
+    if (current) {
+        int current_member_index = scratchpad_index_of_member(current, window);
+        if (current_member_index != -1) restore_frame = current->members[current_member_index].restore_frame;
+        window_manager_remove_scratchpad_for_window(wm, window, false);
     }
 
-mode_0:;
-    if (visible_space && ordered_in) {
-mode_1:;
-        struct window *next = window_manager_find_window_on_space_by_rank_filtering_window(wm, sid, 1, window->id);
-        if (next) {
-            window_manager_focus_window_with_raise(&next->application->psn, next->id, next->ref);
-        } else {
-            _SLPSSetFrontProcessWithOptions(&g_process_manager.finder_psn, 0, kCPSNoWindows);
-        }
-        scripting_addition_order_window(window->id, 0, 0);
-    } else if (visible_space && !ordered_in) {
-mode_2:;
-        scripting_addition_order_window(window->id, 1, 0);
-        window_manager_focus_window_with_raise(&window->application->psn, window->id, window->ref);
+    scratchpad = window_manager_find_scratchpad_by_label(wm, label);
+    if (!scratchpad) {
+        struct scratchpad new_scratchpad = {0};
+        new_scratchpad.label = label;
+        new_scratchpad.visible = true;
+        new_scratchpad.transition = SCRATCHPAD_TRANSITION_IDLE;
+        new_scratchpad.node.stack_selector_anchor = g_stack_selector_default_anchor;
+        buf_push(wm->scratchpads, new_scratchpad);
+        scratchpad = &buf_last(wm->scratchpads);
     } else {
-mode_3:;
-        space_manager_move_window_to_space(sid, window);
-        scripting_addition_order_window(window->id, 1, 0);
-        window_manager_focus_window_with_raise(&window->application->psn, window->id, window->ref);
+        free(label);
+    }
+
+    struct scratchpad_member member = {
+        .window = window,
+        .restore_frame = restore_frame,
+    };
+    scratchpad_initialize_frame(scratchpad, window->frame);
+    buf_push(scratchpad->members, member);
+    scratchpad_node_add_window(scratchpad, window);
+    window->scratchpad = scratchpad->label;
+    window_manager_make_window_floating(&g_space_manager, wm, window, true, false);
+
+    if (assignment == SCRATCHPAD_ASSIGN_DRAG) {
+        scratchpad_present(wm, scratchpad, window);
+    } else if (!existing_stack || stack_was_visible) {
+        scratchpad->visible = scratchpad_is_visible_on_active_space(scratchpad);
+        scratchpad_sync_frames(scratchpad);
+        if (scratchpad->visible) {
+            stack_selector_update_node_with_active_window(&scratchpad->node, window->id);
+        }
+        if (wm->focused_window_id == window->id) {
+            scratchpad_set_active(wm, scratchpad->label);
+        }
+    } else if (assignment == SCRATCHPAD_ASSIGN_AUTOMATIC ||
+               (assignment == SCRATCHPAD_ASSIGN_COMMAND && wm->focused_window_id == window->id)) {
+        scratchpad_present(wm, scratchpad, window);
+    } else {
+        scratchpad->visible = false;
+        stack_selector_destroy_node(&scratchpad->node);
+        scripting_addition_order_window(window->id, 0, 0);
     }
 
     return true;
@@ -2493,39 +2778,237 @@ mode_3:;
 
 bool window_manager_set_scratchpad_for_window(struct window_manager *wm, struct window *window, char *label)
 {
-    struct window *existing_window = window_manager_find_scratchpad_window(wm, label);
-    if (existing_window) return false;
+    return window_manager_assign_scratchpad_for_window(wm, window, label, SCRATCHPAD_ASSIGN_COMMAND);
+}
 
-    window_manager_remove_scratchpad_for_window(wm, window, false);
-    buf_push(wm->scratchpad_window, ((struct scratchpad) {
-        .label = label,
-        .window = window
-    }));
-    window->scratchpad = label;
-    window_manager_make_window_floating(&g_space_manager, wm, window, true, false);
+bool window_manager_scratchpad_window_frame_changed(struct window_manager *wm, struct window *window, CGRect frame)
+{
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    if (!scratchpad) return false;
+
+    int member_index = scratchpad_index_of_member(scratchpad, window);
+    if (member_index == -1) return false;
+
+    struct scratchpad_member *member = &scratchpad->members[member_index];
+    bool user_frame_change = g_mouse_state.window == window;
+    if (user_frame_change) member->frame_sync_pending = false;
+
+    if (member->frame_sync_pending) {
+        bool expected_origin = !AX_DIFF(member->expected_frame.origin.x, frame.origin.x) &&
+                               !AX_DIFF(member->expected_frame.origin.y, frame.origin.y);
+        bool expected_size = !AX_DIFF(member->expected_frame.size.width, frame.size.width) &&
+                             !AX_DIFF(member->expected_frame.size.height, frame.size.height);
+        bool exceeds_width = frame.size.width > member->expected_frame.size.width &&
+                             AX_DIFF(frame.size.width, member->expected_frame.size.width);
+        bool exceeds_height = frame.size.height > member->expected_frame.size.height &&
+                              AX_DIFF(frame.size.height, member->expected_frame.size.height);
+
+        if (exceeds_width || exceeds_height) {
+            member->frame_sync_pending = false;
+            scratchpad->node.area.w = MAX(scratchpad->node.area.w, frame.size.width);
+            scratchpad->node.area.h = MAX(scratchpad->node.area.h, frame.size.height);
+            if (scratchpad->visible) {
+                scratchpad_sync_frames(scratchpad);
+                stack_selector_update_node(&scratchpad->node);
+            }
+            return true;
+        }
+
+        member->frame_sync_observed_origin |= expected_origin;
+        member->frame_sync_observed_size |= expected_size;
+        if (member->frame_sync_observed_origin && member->frame_sync_observed_size) {
+            member->frame_sync_pending = false;
+        }
+        if (expected_origin || expected_size) return true;
+
+        member->frame_sync_pending = false;
+        return true;
+    }
+
+    scratchpad->node.area = (struct area) {
+        .x = frame.origin.x,
+        .y = frame.origin.y,
+        .w = frame.size.width,
+        .h = frame.size.height,
+    };
+
+    if (scratchpad->visible) {
+        scratchpad_sync_frames(scratchpad);
+        stack_selector_update_node_with_active_window(&scratchpad->node, window->id);
+    }
 
     return true;
 }
 
 bool window_manager_remove_scratchpad_for_window(struct window_manager *wm, struct window *window, bool unfloat)
 {
-    for (int i = 0; i < buf_len(wm->scratchpad_window); ++i) {
-        if (wm->scratchpad_window[i].window == window) {
-            window->scratchpad = NULL;
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    if (!scratchpad) return false;
 
-            free(wm->scratchpad_window[i].label);
-            buf_del(wm->scratchpad_window, i);
+    int scratchpad_index = (int)(scratchpad - wm->scratchpads);
+    int member_index = scratchpad_index_of_member(scratchpad, window);
+    if (member_index == -1) return false;
 
-            if (unfloat) {
-                window_manager_toggle_scratchpad_window(wm, window, 3);
-                window_manager_make_window_floating(&g_space_manager, wm, window, false, false);
-            }
+    CGRect restore_frame = scratchpad->members[member_index].restore_frame;
+    bool was_visible = scratchpad_is_visible_on_active_space(scratchpad);
+    scratchpad_node_remove_window(scratchpad, window);
+    buf_del(scratchpad->members, member_index);
+    window->scratchpad = NULL;
 
-            return true;
+    if (scratchpad->node.window_count == 0) {
+        stack_selector_destroy_node(&scratchpad->node);
+        buf_free(scratchpad->members);
+        if (wm->scratchpad_active_label && string_equals(wm->scratchpad_active_label, scratchpad->label)) {
+            scratchpad_clear_active(wm);
+        }
+        free(scratchpad->label);
+        buf_del(wm->scratchpads, scratchpad_index);
+    } else {
+        if (was_visible) {
+            scratchpad_sync_frames(scratchpad);
+            stack_selector_update_node(&scratchpad->node);
         }
     }
 
+    if (unfloat) {
+        uint64_t sid = space_manager_active_space();
+        if (sid && window_space(window->id) != sid && !window_is_sticky(window->id)) {
+            space_manager_move_window_to_space(sid, window);
+        }
+        window_manager_animate_window((struct window_capture) {
+            .window = window,
+            .x = restore_frame.origin.x,
+            .y = restore_frame.origin.y,
+            .w = restore_frame.size.width,
+            .h = restore_frame.size.height,
+        });
+        scripting_addition_order_window(window->id, 1, 0);
+        window_manager_focus_window_with_raise(&window->application->psn, window->id, window->ref);
+        window_manager_make_window_floating(&g_space_manager, wm, window, false, false);
+    }
+
+    return true;
+}
+
+static void scratchpad_clear_capture(struct window_manager *wm)
+{
+    free(wm->scratchpad_capture_label);
+    wm->scratchpad_capture_label = NULL;
+    wm->scratchpad_capture_window_id = 0;
+}
+
+bool window_manager_scratchpad_can_assign_window(struct window *window)
+{
+    if (!window) return false;
+    if (!window->is_root) return false;
+    if (!window_is_real(window)) {
+        if (!window->role || !window->subrole ||
+            !CFEqual(window->role, kAXWindowRole) ||
+            !CFEqual(window->subrole, CFSTR("AXPanel"))) return false;
+    }
+    if (!window_level_is_standard(window)) return false;
+    if (!window_can_move(window)) return false;
+    if (window_check_flag(window, WINDOW_FULLSCREEN)) return false;
+    if (window_check_flag(window, WINDOW_MINIMIZE)) return false;
+    return true;
+}
+
+void window_manager_scratchpad_track_window_created(struct window_manager *wm, struct window *window)
+{
+    if (!window || window->scratchpad || window->rule_matched) return;
+    if (!window_manager_scratchpad_can_assign_window(window)) return;
+
+    scratchpad_clear_capture(wm);
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_by_label(wm, wm->scratchpad_active_label);
+    if (!scratchpad || !scratchpad_is_visible_on_active_space(scratchpad)) return;
+
+    wm->scratchpad_capture_label = strdup(scratchpad->label);
+    wm->scratchpad_capture_window_id = window->id;
+}
+
+bool window_manager_scratchpad_handle_window_focused(struct window_manager *wm, struct window *window)
+{
+    if (!window) return false;
+
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+
+    if (wm->scratchpad_capture_window_id && wm->scratchpad_capture_window_id != window->id) {
+        bool same_stack = scratchpad && string_equals(scratchpad->label, wm->scratchpad_capture_label);
+        bool transient = !scratchpad && !window_manager_scratchpad_can_assign_window(window);
+        if (!same_stack && !transient) scratchpad_clear_capture(wm);
+    } else if (wm->scratchpad_capture_window_id == window->id && !scratchpad) {
+        struct scratchpad *capture = window_manager_find_scratchpad_by_label(wm, wm->scratchpad_capture_label);
+        if (capture && scratchpad_is_visible_on_active_space(capture)) {
+            char *label = strdup(capture->label);
+            scratchpad_clear_capture(wm);
+            window_manager_assign_scratchpad_for_window(wm, window, label, SCRATCHPAD_ASSIGN_AUTOMATIC);
+        } else {
+            scratchpad_clear_capture(wm);
+        }
+        scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    }
+
+    if (scratchpad) {
+        scratchpad_set_active(wm, scratchpad->label);
+        scratchpad_update_order(scratchpad, window);
+        if (!scratchpad_is_visible_on_active_space(scratchpad)) {
+            scratchpad_present(wm, scratchpad, window);
+        } else {
+            scratchpad->visible = true;
+            if (scratchpad->transition == SCRATCHPAD_TRANSITION_SHOWING &&
+                scratchpad_all_windows_ordered(scratchpad, true)) {
+                scratchpad->transition = SCRATCHPAD_TRANSITION_IDLE;
+            }
+            stack_selector_update_node_with_active_window(&scratchpad->node, window->id);
+        }
+        return true;
+    }
+
+    if (window_manager_scratchpad_can_assign_window(window)) {
+        scratchpad_clear_active(wm);
+    }
+
     return false;
+}
+
+void window_manager_update_scratchpad_selectors(struct window_manager *wm)
+{
+    for (int i = 0; i < buf_len(wm->scratchpads); ++i) {
+        struct scratchpad *scratchpad = &wm->scratchpads[i];
+        if (scratchpad_is_visible_on_active_space(scratchpad)) {
+            stack_selector_update_node(&scratchpad->node);
+        } else {
+            stack_selector_destroy_node(&scratchpad->node);
+        }
+    }
+}
+
+bool window_manager_scratchpad_handle_window_ordered(struct window_manager *wm, struct window *window)
+{
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_for_window(wm, window);
+    if (!scratchpad) return false;
+
+    if (scratchpad->transition == SCRATCHPAD_TRANSITION_HIDING) {
+        if (scratchpad_all_windows_ordered(scratchpad, false)) {
+            scratchpad->transition = SCRATCHPAD_TRANSITION_IDLE;
+        }
+        return true;
+    }
+
+    if (scratchpad->transition == SCRATCHPAD_TRANSITION_SHOWING) {
+        if (scratchpad_all_windows_ordered(scratchpad, true)) {
+            scratchpad->transition = SCRATCHPAD_TRANSITION_IDLE;
+        }
+        return true;
+    }
+
+    uint8_t ordered_in = 0;
+    SLSWindowIsOrderedIn(g_connection, window->id, &ordered_in);
+    if (ordered_in && !scratchpad_is_visible_on_active_space(scratchpad)) {
+        scratchpad_present(wm, scratchpad, window);
+    }
+
+    return true;
 }
 
 void window_manager_scratchpad_recover_windows(void)

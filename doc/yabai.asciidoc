@@ -167,7 +167,7 @@ Native space workflows::
     'space.layout-cycle' cycles the focused space through stack, bsp, and float layouts.
 
 Window actions::
-    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.stack-selector-anchor'
+    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.scratchpad-toggle', 'window.stack-selector-anchor'
 
 Runtime-setting actions::
     'config.mouse-follows-focus', 'config.focus-follows-mouse', 'config.stack-selector', 'config.stack-selector-anchor', 'config.skip-window-focus-animation', 'config.layout', 'config.split-type', 'config.split-ratio', 'config.top-padding', 'config.bottom-padding', 'config.left-padding', 'config.right-padding', 'config.window-gap', 'config.auto-balance'
@@ -542,13 +542,16 @@ COMMAND
     System Integrity Protection must be partially disabled.
 
 *--scratchpad* ['<LABEL>|recover']::
-    Unique identifier used to identify a window scratchpad. +
-    An identifier may only be assigned to a single window at any given time. +
-    A scratchpad window will automatically be treated as a (manage=off) floating window. +
-    If the scratchpad is already taken by another window, this assignment will fail. +
-    If the scratchpad is re-assigned, the previous identifier will become available. +
-    If no value is given, the window will seize to be a scratchpad window. +
-    The special value 'recover' can be used to forcefully bring all scratchpad windows to the front. +
+    Assign the selected window to a named scratch stack. +
+    Multiple windows assigned the same label are placed in one floating stack with a shared frame. +
+    The first member initializes the shared frame, and later members are resized to match it. +
+    Resizing or moving a visible member updates the shared frame for every member. +
+    Assigning a window to another label removes it from its previous scratch stack. +
+    If no value is given, the window will cease to be a scratch stack member. +
+    A newly focused top-level window opened while a visible scratch stack owns focus is automatically added to that stack unless an explicit rule matched it. +
+    Focusing or ordering in any member presents the complete stack and makes that member active. +
+    Use '--toggle <LABEL>' to show or hide every member of the named stack. +
+    The special value 'recover' can be used to forcefully bring all scratch stack windows to the front. +
     This can be useful if windows become inaccessible due to a restart or crash. +
     System Integrity Protection must be partially disabled.
 
@@ -783,10 +786,9 @@ ARGUMENT
     Set window frame based on a self-defined grid.
 
 *scratchpad='<LABEL>'*::
-    Unique identifier used to identify a window scratchpad. +
-    An identifier may only be assigned to a single window at any given time. +
-    A scratchpad window will automatically be treated as a (manage=off) floating window. +
-    If this rule matches multiple windows, only the first window that matched will be assigned this scratchpad identifier. +
+    Assign matching windows to the named scratch stack. +
+    Every matching window is treated as a (manage=off) floating member of the same shared-frame stack. +
+    Explicitly matched rules take precedence over automatic scratch-stack capture. +
     System Integrity Protection must be partially disabled.
 
 DATAFORMAT

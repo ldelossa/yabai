@@ -6,6 +6,15 @@ TEST_FUNC(command_palette_action_lookup, {
     TEST_CHECK(action && action->argument_mode == COMMAND_PALETTE_ARGUMENT_REQUIRED, true);
     TEST_CHECK(command_palette_find_action("rule.add") == NULL, true);
 
+    const struct command_palette_action *scratch_assign = command_palette_find_action("window.scratchpad");
+    TEST_CHECK(scratch_assign != NULL, true);
+    TEST_CHECK(command_palette_picker_kind_for_action(scratch_assign) == COMMAND_PALETTE_PICKER_NONE, true);
+
+    const struct command_palette_action *scratch_toggle = command_palette_find_action("window.scratchpad-toggle");
+    TEST_CHECK(scratch_toggle != NULL, true);
+    TEST_CHECK(scratch_toggle && string_equals(scratch_toggle->command, "--toggle"), true);
+    TEST_CHECK(scratch_toggle && string_equals(scratch_toggle->syntax, "SCRATCH_LABEL"), true);
+
     const struct command_palette_action *native_action = command_palette_find_action("space.choose");
     TEST_CHECK(native_action != NULL, true);
     TEST_CHECK(native_action && native_action->kind == COMMAND_PALETTE_ACTION_NATIVE, true);

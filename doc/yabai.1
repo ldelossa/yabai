@@ -675,19 +675,25 @@ System Integrity Protection must be partially disabled.
 .sp
 \fB\-\-scratchpad\fP [\fI<LABEL>|recover\fP]
 .RS 4
-Unique identifier used to identify a window scratchpad.
+Assign the selected window to a named scratch stack.
 .br
-An identifier may only be assigned to a single window at any given time.
+Multiple windows assigned the same label are placed in one floating stack with a shared frame.
 .br
-A scratchpad window will automatically be treated as a (manage=off) floating window.
+The first member initializes the shared frame, and later members are resized to match it.
 .br
-If the scratchpad is already taken by another window, this assignment will fail.
+Resizing or moving a visible member updates the shared frame for every member.
 .br
-If the scratchpad is re\-assigned, the previous identifier will become available.
+Assigning a window to another label removes it from its previous scratch stack.
 .br
-If no value is given, the window will seize to be a scratchpad window.
+If no value is given, the window will cease to be a scratch stack member.
 .br
-The special value \fIrecover\fP can be used to forcefully bring all scratchpad windows to the front.
+A newly focused top\-level window opened while a visible scratch stack owns focus is automatically added to that stack unless an explicit rule matched it.
+.br
+Focusing or ordering in any member presents the complete stack and makes that member active.
+.br
+Use \fB\-\-toggle <LABEL>\fP to show or hide every member of the named stack.
+.br
+The special value \fIrecover\fP can be used to forcefully bring all scratch stack windows to the front.
 .br
 This can be useful if windows become inaccessible due to a restart or crash.
 .br
@@ -998,13 +1004,11 @@ Set window frame based on a self\-defined grid.
 .sp
 \fBscratchpad=\fI<LABEL>\fP\fP
 .RS 4
-Unique identifier used to identify a window scratchpad.
+Assign matching windows to the named scratch stack.
 .br
-An identifier may only be assigned to a single window at any given time.
+Every matching window is treated as a (manage=off) floating member of the same shared\-frame stack.
 .br
-A scratchpad window will automatically be treated as a (manage=off) floating window.
-.br
-If this rule matches multiple windows, only the first window that matched will be assigned this scratchpad identifier.
+Explicitly matched rules take precedence over automatic scratch\-stack capture.
 .br
 System Integrity Protection must be partially disabled.
 .RE

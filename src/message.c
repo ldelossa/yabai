@@ -2520,7 +2520,7 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             } else if (parse_label(rsp, token, LABEL_WINDOW, &label)) {
                 if (label) {
                     if (!window_manager_set_scratchpad_for_window(&g_window_manager, acting_window, label)) {
-                        daemon_fail(rsp, "the given scratchpad is already assigned to a different window!\n");
+                        daemon_fail(rsp, "the selected scratch stack cannot accept another window!\n");
                     }
                 } else {
                     if (!window_manager_remove_scratchpad_for_window(&g_window_manager, acting_window, true)) {
