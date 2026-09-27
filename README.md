@@ -59,25 +59,30 @@ yabai -m action --run space.layout-cycle
 
 The native space chooser searches workspace names, focuses existing workspaces, and creates a labeled workspace when no name matches.
 
-### Native stack selector
+### Scratch stacks and native stack selector
 
 Stack layouts and stacked BSP leaves receive a compact, clickable application-icon selector.
 
-The selector highlights the active window, focuses windows on click, supports window previews, and can be anchored independently for each stack.
+Scratchpad labels can hold multiple windows in one shared frame, and newly focused top-level windows automatically join the active scratch stack.
 
-| Stack selector | Hover preview |
+The selector supports click-to-focus, native hover previews, drag reordering, drag-out removal, and moves between stacks.
+
+Optional auto-collapse reduces every selector to a liquid-glass edge handle until it is hovered or revealed by keyboard stack cycling.
+
+| Collapsed edge handle | Expanded selector and preview |
 |:--:|:--:|
-| <img width="120" src="assets/fork/stack-selector.png" alt="Stack selector with application icons"> | <img width="560" src="assets/fork/stack-selector-preview.png" alt="Stack selector native hover preview"> |
+| <img width="180" src="assets/fork/stack-selector-collapsed.png" alt="Collapsed liquid-glass stack selector handle"> | <img width="560" src="assets/fork/stack-selector-expanded.png" alt="Expanded stack selector with application icons and native preview"> |
 
 ```sh
 yabai -m config stack_selector on
+yabai -m config stack_selector_auto_collapse on
 yabai -m config stack_selector_anchor vertical-center-left
 
 # Override the focused stack without changing the global default.
 yabai -m window --stack-selector-anchor horizontal-center-top
 ```
 
-Right-clicking a selector opens a visual 3 by 4 anchor picker.
+Right-clicking a selector toggles auto-collapse and opens the visual 3 by 4 anchor picker.
 
 ### Dynamic island status UI
 
@@ -131,6 +136,7 @@ The layout-cycle workflow rotates through `stack`, `bsp`, and `float`.
 | Setting | Accepted values | Default |
 |:--|:--|:--|
 | `stack_selector` | `on`, `off` | `off` |
+| `stack_selector_auto_collapse` | `on`, `off` | `off` |
 | `stack_selector_anchor` | See the anchor values below. | `vertical-center-left` |
 | `status_island` | `on`, `off` | `on` |
 | `status_island_workspace_order` | `index`, `alphabetical`, `creation` | `index` |
@@ -218,6 +224,7 @@ For SIP requirements and a hash-pinned passwordless sudo rule, follow the upstre
 yabai -m config                                 \
     layout                       stack          \
     stack_selector               on             \
+    stack_selector_auto_collapse on             \
     status_island                on             \
     status_island_workspace_order alphabetical  \
     space_cleaner                on
