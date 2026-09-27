@@ -1,3 +1,5 @@
+#import <QuartzCore/QuartzCore.h>
+
 extern int g_connection;
 extern struct event_loop g_event_loop;
 extern struct space_manager g_space_manager;
@@ -14,7 +16,15 @@ extern struct window_manager g_window_manager;
 #define STACK_SELECTOR_PREVIEW_MIN_WIDTH 240.0f
 
 bool g_stack_selector_enabled = false;
+bool g_stack_selector_auto_collapse = false;
 enum stack_selector_anchor g_stack_selector_default_anchor = STACK_SELECTOR_ANCHOR_VERTICAL_CENTER_LEFT;
+
+#define STACK_SELECTOR_HANDLE_THICKNESS 10.0f
+#define STACK_SELECTOR_HANDLE_MIN_EXTENT 16.0f
+#define STACK_SELECTOR_HANDLE_MAX_EXTENT 64.0f
+#define STACK_SELECTOR_HANDLE_EXTENT_RATIO 0.25f
+#define STACK_SELECTOR_COLLAPSE_DELAY 0.3
+#define STACK_SELECTOR_PEEK_DELAY 1.5
 char *g_stack_selector_anchor_str[] =
 {
     "vertical-top-left",
@@ -32,19 +42,38 @@ char *g_stack_selector_anchor_str[] =
 };
 static uint64_t g_stack_selector_next_id = 1;
 
+static NSBezierPath *stack_selector_tab_bezier(CGRect rect, bool horizontal, enum stack_selector_anchor anchor);
+
 @class stack_selector_view;
 
 @interface stack_selector_panel : NSPanel {
     enum stack_selector_anchor _stackSelectorAnchor;
     stack_selector_view *_selectorView;
+    NSRect _fullFrame;
+    NSRect _collapsedFrame;
+    bool _autoCollapse;
+    bool _collapsed;
+    bool _hovered;
 }
 @property enum stack_selector_anchor stackSelectorAnchor;
 @property(assign) stack_selector_view *selectorView;
+@property NSRect fullFrame;
+@property NSRect collapsedFrame;
+@property bool autoCollapse;
+@property bool collapsed;
+@property bool hovered;
+- (void)applyCollapseStateAnimated:(BOOL)animated;
 @end
 
 @implementation stack_selector_panel
 @synthesize stackSelectorAnchor = _stackSelectorAnchor;
 @synthesize selectorView = _selectorView;
+@synthesize fullFrame = _fullFrame;
+@synthesize collapsedFrame = _collapsedFrame;
+@synthesize autoCollapse = _autoCollapse;
+@synthesize collapsed = _collapsed;
+@synthesize hovered = _hovered;
+
 - (BOOL)canBecomeKeyWindow
 {
     return NO;
@@ -54,6 +83,38 @@ static uint64_t g_stack_selector_next_id = 1;
 {
     return NO;
 }
+
+- (void)applyCollapseStateAnimated:(BOOL)animated
+{
+    NSRect target = (_autoCollapse && _collapsed) ? _collapsedFrame : _fullFrame;
+
+    if (@available(macOS 26.0, *)) {
+        if ([self.contentView isKindOfClass:NSClassFromString(@"NSGlassEffectView")]) {
+            NSGlassEffectView *surface = (NSGlassEffectView *)self.contentView;
+            surface.wantsLayer = YES;
+            if (_autoCollapse && _collapsed) {
+                surface.cornerRadius = 0.0f;
+                bool horizontal = _stackSelectorAnchor >= STACK_SELECTOR_ANCHOR_HORIZONTAL_LEFT_TOP;
+                NSBezierPath *tab = stack_selector_tab_bezier(surface.bounds, horizontal, _stackSelectorAnchor);
+                CAShapeLayer *mask = [CAShapeLayer layer];
+                mask.path = tab.CGPath;
+                surface.layer.mask = mask;
+            } else {
+                surface.layer.mask = nil;
+                surface.cornerRadius = 8.0f;
+            }
+        }
+    }
+
+    if (animated) {
+        [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+            context.duration = 0.15;
+            [self.animator setFrame:target display:YES];
+        }];
+    } else {
+        [self setFrame:target display:YES];
+    }
+}
 @end
 
 static void stack_selector_hover_changed(uint64_t selector_id, uint32_t window_id, pid_t pid);
@@ -61,6 +122,9 @@ static void stack_selector_show_ghost(NSImage *icon, NSPoint point);
 static void stack_selector_move_ghost(NSPoint point);
 static void stack_selector_hide_ghost(void);
 static bool stack_selector_window_id_at_point(uint32_t *window_id, NSPoint point, uint64_t exclude_id);
+static void stack_selector_schedule_collapse(uint64_t selector_id);
+static void stack_selector_cancel_collapse(uint64_t selector_id);
+static void stack_selector_peek(uint64_t selector_id);
 
 static inline bool stack_selector_anchor_is_horizontal(enum stack_selector_anchor anchor)
 {
@@ -79,6 +143,44 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     return anchor == STACK_SELECTOR_ANCHOR_HORIZONTAL_LEFT_TOP ||
            anchor == STACK_SELECTOR_ANCHOR_HORIZONTAL_CENTER_TOP ||
            anchor == STACK_SELECTOR_ANCHOR_HORIZONTAL_RIGHT_TOP;
+}
+
+static NSBezierPath *stack_selector_tab_bezier(CGRect rect, bool horizontal, enum stack_selector_anchor anchor)
+{
+    CGFloat r = MIN(4.0f, MIN(rect.size.width, rect.size.height) / 2.0f);
+    bool vertical = !horizontal;
+    bool outer_left = vertical && stack_selector_anchor_is_left(anchor);
+    bool outer_top = !vertical && stack_selector_anchor_is_top(anchor);
+
+    bool round_tl = (vertical && !outer_left) || (!vertical && !outer_top);
+    bool round_tr = (vertical && outer_left) || (!vertical && !outer_top);
+    bool round_bl = (vertical && !outer_left) || (!vertical && outer_top);
+    bool round_br = (vertical && outer_left) || (!vertical && outer_top);
+
+    CGFloat minx = CGRectGetMinX(rect), maxx = CGRectGetMaxX(rect);
+    CGFloat miny = CGRectGetMinY(rect), maxy = CGRectGetMaxY(rect);
+
+    NSBezierPath *path = [NSBezierPath bezierPath];
+    [path moveToPoint:NSMakePoint(minx + (round_tl ? r : 0.0f), miny)];
+    [path lineToPoint:NSMakePoint(maxx - (round_tr ? r : 0.0f), miny)];
+
+    if (round_tr) [path appendBezierPathWithArcFromPoint:NSMakePoint(maxx, miny) toPoint:NSMakePoint(maxx, maxy) radius:r];
+    else [path lineToPoint:NSMakePoint(maxx, miny)];
+    [path lineToPoint:NSMakePoint(maxx, maxy - (round_br ? r : 0.0f))];
+
+    if (round_br) [path appendBezierPathWithArcFromPoint:NSMakePoint(maxx, maxy) toPoint:NSMakePoint(minx, maxy) radius:r];
+    else [path lineToPoint:NSMakePoint(maxx, maxy)];
+    [path lineToPoint:NSMakePoint(minx + (round_bl ? r : 0.0f), maxy)];
+
+    if (round_bl) [path appendBezierPathWithArcFromPoint:NSMakePoint(minx, maxy) toPoint:NSMakePoint(minx, miny) radius:r];
+    else [path lineToPoint:NSMakePoint(minx, maxy)];
+    [path lineToPoint:NSMakePoint(minx, miny + (round_tl ? r : 0.0f))];
+
+    if (round_tl) [path appendBezierPathWithArcFromPoint:NSMakePoint(minx, miny) toPoint:NSMakePoint(maxx, miny) radius:r];
+    else [path lineToPoint:NSMakePoint(minx, miny)];
+
+    [path closePath];
+    return path;
 }
 
 #define STACK_SELECTOR_PICKER_PADDING 6.0f
@@ -417,6 +519,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
                      anchor:(enum stack_selector_anchor)anchor
              anchorOverride:(bool)anchor_override
 {
+    uint32_t previous_active_window_id = _active_window_id;
     uint32_t previous_hovered_window_id = _hovered_index >= 0 && _hovered_index < (NSInteger)_window_ids.count
                                         ? [_window_ids[_hovered_index] unsignedIntValue]
                                         : 0;
@@ -457,6 +560,10 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
         stack_selector_hover_changed(_selector_id, 0, 0);
     }
     [self setNeedsDisplay:YES];
+
+    if (previous_active_window_id != 0 && previous_active_window_id != active_window_id) {
+        stack_selector_peek(_selector_id);
+    }
 }
 
 - (NSInteger)indexAtPoint:(NSPoint)point
@@ -503,6 +610,14 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 
 - (void)mouseEntered:(NSEvent *)event
 {
+    stack_selector_cancel_collapse(_selector_id);
+
+    stack_selector_panel *panel = (stack_selector_panel *)self.window;
+    panel.hovered = true;
+    if (panel.autoCollapse && panel.collapsed) {
+        panel.collapsed = false;
+        [panel applyCollapseStateAnimated:YES];
+    }
     [self mouseMoved:event];
 }
 
@@ -512,6 +627,12 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
         _hovered_index = -1;
         [self setNeedsDisplay:YES];
         stack_selector_hover_changed(_selector_id, 0, 0);
+    }
+
+    stack_selector_panel *panel = (stack_selector_panel *)self.window;
+    panel.hovered = false;
+    if (panel.autoCollapse && !panel.collapsed) {
+        stack_selector_schedule_collapse(_selector_id);
     }
 }
 
@@ -596,8 +717,16 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 
 - (void)rightMouseDown:(NSEvent *)event
 {
-    NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Stack Selector Anchor"] autorelease];
+    NSMenu *menu = [[[NSMenu alloc] initWithTitle:@"Stack Selector"] autorelease];
     menu.autoenablesItems = NO;
+
+    NSMenuItem *auto_collapse_item = [[NSMenuItem alloc] initWithTitle:@"Auto-Collapse" action:@selector(toggleAutoCollapse:) keyEquivalent:@""];
+    auto_collapse_item.target = self;
+    auto_collapse_item.state = g_stack_selector_auto_collapse ? NSControlStateValueOn : NSControlStateValueOff;
+    [menu addItem:auto_collapse_item];
+    [auto_collapse_item release];
+
+    [menu addItem:[NSMenuItem separatorItem]];
 
     stack_selector_anchor_picker_view *picker = [[stack_selector_anchor_picker_view alloc] initWithAnchor:_anchor
                                                                                            anchorOverride:_anchor_override
@@ -612,9 +741,42 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     [NSMenu popUpContextMenu:menu withEvent:event forView:self];
 }
 
+- (void)toggleAutoCollapse:(id)sender
+{
+    stack_selector_set_auto_collapse(!g_stack_selector_auto_collapse);
+}
+
 - (void)drawRect:(NSRect)dirty_rect
 {
     [super drawRect:dirty_rect];
+
+    stack_selector_panel *panel = (stack_selector_panel *)self.window;
+    if (panel.autoCollapse && panel.collapsed) {
+        NSRect pill = NSInsetRect(self.bounds, 0.5f, 0.5f);
+        NSBezierPath *path = stack_selector_tab_bezier(pill, _horizontal, _anchor);
+
+        [[[NSColor whiteColor] colorWithAlphaComponent:0.08f] setFill];
+        [path fill];
+
+        [[[NSColor whiteColor] colorWithAlphaComponent:0.22f] setStroke];
+        path.lineWidth = 1.0f;
+        [path stroke];
+
+        if (_horizontal) {
+            CGFloat grip_width = MIN(16.0f, pill.size.width * 0.45f);
+            NSRect grip = NSMakeRect(NSMidX(pill) - grip_width / 2.0f, NSMidY(pill) - 1.0f, grip_width, 2.0f);
+            NSBezierPath *grip_path = [NSBezierPath bezierPathWithRoundedRect:grip xRadius:1.0f yRadius:1.0f];
+            [[[NSColor whiteColor] colorWithAlphaComponent:0.55f] setFill];
+            [grip_path fill];
+        } else {
+            CGFloat grip_height = MIN(16.0f, pill.size.height * 0.45f);
+            NSRect grip = NSMakeRect(NSMidX(pill) - 1.0f, NSMidY(pill) - grip_height / 2.0f, 2.0f, grip_height);
+            NSBezierPath *grip_path = [NSBezierPath bezierPathWithRoundedRect:grip xRadius:1.0f yRadius:1.0f];
+            [[[NSColor whiteColor] colorWithAlphaComponent:0.55f] setFill];
+            [grip_path fill];
+        }
+        return;
+    }
 
     CGFloat item_extent = !_window_ids.count
                         ? 0
@@ -772,6 +934,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 
 @interface stack_selector_controller : NSObject {
     NSMutableDictionary *_panels;
+    NSMutableDictionary *_collapse_generations;
     stack_selector_panel *_preview_panel;
     uint64_t _preview_generation;
     uint64_t _hovered_selector_id;
@@ -782,6 +945,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 + (instancetype)sharedController;
 - (void)updateSelector:(uint64_t)selector_id
                  frame:(CGRect)frame
+        collapsedFrame:(CGRect)collapsed_frame
              windowIds:(NSArray *)window_ids
                   pids:(NSArray *)pids
         activeWindowId:(uint32_t)active_window_id
@@ -801,6 +965,9 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 - (void)moveGhostToPoint:(NSPoint)point;
 - (void)hideGhost;
 - (BOOL)windowId:(uint32_t *)window_id atGlobalPoint:(NSPoint)point excludingSelectorId:(uint64_t)exclude_id;
+- (void)scheduleCollapseForSelector:(uint64_t)selector_id afterDelay:(NSTimeInterval)delay;
+- (void)cancelScheduledCollapseForSelector:(uint64_t)selector_id;
+- (void)peekSelector:(uint64_t)selector_id;
 @end
 
 @implementation stack_selector_controller
@@ -819,6 +986,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     self = [super init];
     if (self) {
         _panels = [[NSMutableDictionary alloc] init];
+        _collapse_generations = [[NSMutableDictionary alloc] init];
     }
     return self;
 }
@@ -832,12 +1000,14 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     [_preview_panel release];
     [_ghost_panel close];
     [_ghost_panel release];
+    [_collapse_generations release];
     [_panels release];
     [super dealloc];
 }
 
 - (void)updateSelector:(uint64_t)selector_id
                  frame:(CGRect)frame
+        collapsedFrame:(CGRect)collapsed_frame
              windowIds:(NSArray *)window_ids
                   pids:(NSArray *)pids
         activeWindowId:(uint32_t)active_window_id
@@ -876,14 +1046,21 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
         [view release];
         [surface release];
 
+        panel.collapsed = g_stack_selector_auto_collapse;
         [_panels setObject:panel forKey:key];
         [panel release];
     }
 
     panel.stackSelectorAnchor = anchor;
-    [panel setFrame:frame display:NO];
+    panel.fullFrame = frame;
+    panel.collapsedFrame = collapsed_frame;
+    panel.autoCollapse = g_stack_selector_auto_collapse;
+    if (!panel.autoCollapse) panel.collapsed = false;
+    [panel applyCollapseStateAnimated:NO];
+
+    NSRect panel_frame = panel.frame;
     NSGlassEffectView *surface = (NSGlassEffectView *)panel.contentView;
-    surface.frame = NSMakeRect(0, 0, frame.size.width, frame.size.height);
+    surface.frame = NSMakeRect(0, 0, panel_frame.size.width, panel_frame.size.height);
     stack_selector_view *view = (stack_selector_view *)surface.contentView;
     [view updateWithWindowIds:window_ids
                          pids:pids
@@ -1083,6 +1260,54 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     [panel orderOut:nil];
     [panel close];
     [_panels removeObjectForKey:key];
+    [_collapse_generations removeObjectForKey:key];
+}
+
+- (uint64_t)bumpCollapseGeneration:(uint64_t)selector_id
+{
+    NSNumber *key = [NSNumber numberWithUnsignedLongLong:selector_id];
+    uint64_t generation = [[_collapse_generations objectForKey:key] unsignedLongLongValue] + 1;
+    [_collapse_generations setObject:[NSNumber numberWithUnsignedLongLong:generation] forKey:key];
+    return generation;
+}
+
+- (uint64_t)collapseGeneration:(uint64_t)selector_id
+{
+    NSNumber *key = [NSNumber numberWithUnsignedLongLong:selector_id];
+    return [[_collapse_generations objectForKey:key] unsignedLongLongValue];
+}
+
+- (void)scheduleCollapseForSelector:(uint64_t)selector_id afterDelay:(NSTimeInterval)delay
+{
+    uint64_t generation = [self bumpCollapseGeneration:selector_id];
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (generation != [self collapseGeneration:selector_id]) return;
+
+        NSNumber *key = [NSNumber numberWithUnsignedLongLong:selector_id];
+        stack_selector_panel *panel = [_panels objectForKey:key];
+        if (panel && panel.autoCollapse && !panel.collapsed) {
+            panel.collapsed = true;
+            [panel applyCollapseStateAnimated:YES];
+        }
+    });
+}
+
+- (void)cancelScheduledCollapseForSelector:(uint64_t)selector_id
+{
+    [self bumpCollapseGeneration:selector_id];
+}
+
+- (void)peekSelector:(uint64_t)selector_id
+{
+    NSNumber *key = [NSNumber numberWithUnsignedLongLong:selector_id];
+    stack_selector_panel *panel = [_panels objectForKey:key];
+    if (!panel || !panel.autoCollapse || panel.hovered) return;
+
+    if (panel.collapsed) {
+        panel.collapsed = false;
+        [panel applyCollapseStateAnimated:YES];
+    }
+    [self scheduleCollapseForSelector:selector_id afterDelay:STACK_SELECTOR_PEEK_DELAY];
 }
 
 - (void)hideAll
@@ -1181,8 +1406,24 @@ static bool stack_selector_window_id_at_point(uint32_t *window_id, NSPoint point
     return [[stack_selector_controller sharedController] windowId:window_id atGlobalPoint:point excludingSelectorId:exclude_id];
 }
 
+static void stack_selector_schedule_collapse(uint64_t selector_id)
+{
+    [[stack_selector_controller sharedController] scheduleCollapseForSelector:selector_id afterDelay:STACK_SELECTOR_COLLAPSE_DELAY];
+}
+
+static void stack_selector_cancel_collapse(uint64_t selector_id)
+{
+    [[stack_selector_controller sharedController] cancelScheduledCollapseForSelector:selector_id];
+}
+
+static void stack_selector_peek(uint64_t selector_id)
+{
+    [[stack_selector_controller sharedController] peekSelector:selector_id];
+}
+
 static void stack_selector_dispatch_update(uint64_t selector_id,
                                            CGRect frame,
+                                           CGRect collapsed_frame,
                                            NSArray *window_ids,
                                            NSArray *pids,
                                            uint32_t active_window_id,
@@ -1193,6 +1434,7 @@ static void stack_selector_dispatch_update(uint64_t selector_id,
         if (@available(macOS 27.0, *)) {
             [[stack_selector_controller sharedController] updateSelector:selector_id
                                                                    frame:frame
+                                                          collapsedFrame:collapsed_frame
                                                                windowIds:window_ids
                                                                     pids:pids
                                                           activeWindowId:active_window_id
@@ -1327,8 +1569,38 @@ static void stack_selector_update_node_with_active_window_id(struct window_node 
                               main_display_height - cg_y - height,
                               width,
                               height);
+
+    CGFloat handle_thickness = STACK_SELECTOR_HANDLE_THICKNESS;
+    CGFloat handle_extent = available_extent * STACK_SELECTOR_HANDLE_EXTENT_RATIO;
+    handle_extent = MIN(STACK_SELECTOR_HANDLE_MAX_EXTENT, MAX(STACK_SELECTOR_HANDLE_MIN_EXTENT, handle_extent));
+    handle_extent = MIN(handle_extent, available_extent);
+    handle_extent = MIN(handle_extent, horizontal ? width : height);
+
+    CGFloat collapsed_cg_x;
+    CGFloat collapsed_cg_y;
+    CGFloat collapsed_w;
+    CGFloat collapsed_h;
+
+    if (horizontal) {
+        collapsed_w = handle_extent;
+        collapsed_h = handle_thickness;
+        collapsed_cg_y = stack_selector_anchor_is_top(anchor) ? area.y : area.y + area.h - handle_thickness;
+        collapsed_cg_x = cg_x + (width - handle_extent) / 2.0f;
+    } else {
+        collapsed_w = handle_thickness;
+        collapsed_h = handle_extent;
+        collapsed_cg_x = stack_selector_anchor_is_left(anchor) ? area.x : area.x + area.w - handle_thickness;
+        collapsed_cg_y = cg_y + (height - handle_extent) / 2.0f;
+    }
+
+    CGRect collapsed_frame = CGRectMake(collapsed_cg_x,
+                                        main_display_height - collapsed_cg_y - collapsed_h,
+                                        collapsed_w,
+                                        collapsed_h);
+
     stack_selector_dispatch_update(node->stack_selector_id,
                                    frame,
+                                   collapsed_frame,
                                    window_ids,
                                    pids,
                                    active_window_id,
@@ -1387,6 +1659,14 @@ void stack_selector_set_enabled(bool enabled)
     if (g_stack_selector_enabled == enabled) return;
 
     g_stack_selector_enabled = enabled;
+    stack_selector_update_all();
+}
+
+void stack_selector_set_auto_collapse(bool enabled)
+{
+    if (g_stack_selector_auto_collapse == enabled) return;
+
+    g_stack_selector_auto_collapse = enabled;
     stack_selector_update_all();
 }
 

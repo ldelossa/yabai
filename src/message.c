@@ -30,6 +30,7 @@ extern bool g_verbose;
 #define COMMAND_CONFIG_WINDOW_INSERT_POINT   "window_insertion_point"
 #define COMMAND_CONFIG_WINDOW_ZOOM_PERSIST   "window_zoom_persist"
 #define COMMAND_CONFIG_STACK_SELECTOR        "stack_selector"
+#define COMMAND_CONFIG_STACK_SELECTOR_AUTO_COLLAPSE "stack_selector_auto_collapse"
 #define COMMAND_CONFIG_STACK_SELECTOR_ANCHOR "stack_selector_anchor"
 #define COMMAND_CONFIG_STATUS_ISLAND          "status_island"
 #define COMMAND_CONFIG_STATUS_ISLAND_ORDER     "status_island_workspace_order"
@@ -1281,6 +1282,17 @@ static void handle_domain_config(FILE *rsp, struct token domain, char *message)
                 stack_selector_set_enabled(false);
             } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
                 stack_selector_set_enabled(true);
+            } else {
+                daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
+            }
+        } else if (token_equals(command, COMMAND_CONFIG_STACK_SELECTOR_AUTO_COLLAPSE)) {
+            struct token value = get_token(&message);
+            if (!token_is_valid(value)) {
+                fprintf(rsp, "%s\n", bool_str[g_stack_selector_auto_collapse]);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_OFF)) {
+                stack_selector_set_auto_collapse(false);
+            } else if (token_equals(value, ARGUMENT_COMMON_VAL_ON)) {
+                stack_selector_set_auto_collapse(true);
             } else {
                 daemon_fail(rsp, "unknown value '%.*s' given to command '%.*s' for domain '%.*s'\n", value.length, value.text, command.length, command.text, domain.length, domain.text);
             }

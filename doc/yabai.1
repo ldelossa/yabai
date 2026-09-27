@@ -2,12 +2,12 @@
 .\"     Title: yabai
 .\"    Author: [see the "AUTHOR(S)" section]
 .\" Generator: Asciidoctor 2.0.26
-.\"      Date: 2026-05-08
+.\"      Date: 2026-09-26
 .\"    Manual: Yabai Manual
 .\"    Source: Yabai
 .\"  Language: English
 .\"
-.TH "YABAI" "1" "2026-05-08" "Yabai" "Yabai Manual"
+.TH "YABAI" "1" "2026-09-26" "Yabai" "Yabai Manual"
 .ie \n(.g .ds Aq \(aq
 .el       .ds Aq '
 .ss \n[.ss] 0
@@ -157,6 +157,90 @@ EASING\&      := ease_in_sine\&  | ease_out_sine\&  | ease_in_out_sine\&  |
 .fi
 .if n .RE
 .SH "DOMAINS"
+.SS "Action"
+.sp
+The action domain exposes Yabai\(cqs native command palette and stable action identifiers suitable for skhd bindings.
+.sp
+Rules, signals, and raw queries are intentionally not included in the palette because they are better suited to configuration files or terminal output.
+.SS "General Syntax"
+.sp
+yabai \-m action \fI<COMMAND>\fP
+.SS "COMMAND"
+.sp
+\fB\-\-show\fP
+.RS 4
+Show the native command palette on the display containing the pointer.
+.br
+Type to filter by title, action identifier, category, or syntax.
+.br
+Use the arrow keys to navigate and Return to select an action.
+.br
+Actions requiring an argument transition to a text\-input view.
+.br
+Escape returns from argument or confirmation views to the action list, and closes the palette from the action list.
+.br
+Destructive palette actions require confirmation.
+.RE
+.sp
+\fB\-\-run\fP \fI<ACTION_ID>\fP [\fI<ARGUMENT>\fP]
+.RS 4
+Execute an action directly by its stable identifier.
+.br
+Quote arguments containing spaces so they arrive as a single argument.
+.br
+Direct low\-level execution returns the underlying IPC command output and error status.
+.br
+Native workflow actions open their interactive view when required.
+.br
+Destructive actions invoked directly do not show the palette confirmation view.
+.RE
+.sp
+\fB\-\-list\fP
+.RS 4
+Output the action catalog as JSON, including identifiers, titles, categories, action kinds, argument requirements, syntax, and destructive flags.
+.RE
+.SS "ACTION_ID"
+.sp
+Display actions
+.RS 4
+\fIdisplay.focus\fP, \fIdisplay.space\fP, \fIdisplay.label\fP
+.RE
+.sp
+Space actions
+.RS 4
+\fIspace.choose\fP, \fIspace.relabel\fP, \fIspace.layout\-cycle\fP, \fIspace.focus\fP, \fIspace.switch\fP, \fIspace.create\fP, \fIspace.destroy\fP, \fIspace.move\fP, \fIspace.swap\fP, \fIspace.display\fP, \fIspace.equalize\fP, \fIspace.balance\fP, \fIspace.mirror\fP, \fIspace.rotate\fP, \fIspace.padding\fP, \fIspace.gap\fP, \fIspace.toggle\fP, \fIspace.layout\fP, \fIspace.label\fP
+.RE
+.sp
+Native space workflows
+.RS 4
+\fIspace.choose\fP opens a searchable list of spaces and creates, labels, and focuses a space from unmatched search text.
+.br
+\fIspace.relabel\fP prompts with the focused space\(cqs current label and clears the label when submitted empty.
+.br
+\fIspace.layout\-cycle\fP cycles the focused space through stack, bsp, and float layouts.
+.RE
+.sp
+Window actions
+.RS 4
+\fIwindow.focus\fP, \fIwindow.close\fP, \fIwindow.minimize\fP, \fIwindow.deminimize\fP, \fIwindow.display\fP, \fIwindow.space\fP, \fIwindow.swap\fP, \fIwindow.warp\fP, \fIwindow.stack\fP, \fIwindow.insert\fP, \fIwindow.grid\fP, \fIwindow.move\fP, \fIwindow.resize\fP, \fIwindow.ratio\fP, \fIwindow.toggle\fP, \fIwindow.sub\-layer\fP, \fIwindow.opacity\fP, \fIwindow.raise\fP, \fIwindow.lower\fP, \fIwindow.scratchpad\fP, \fIwindow.scratchpad\-toggle\fP, \fIwindow.stack\-selector\-anchor\fP
+.RE
+.sp
+Runtime\-setting actions
+.RS 4
+\fIconfig.mouse\-follows\-focus\fP, \fIconfig.focus\-follows\-mouse\fP, \fIconfig.stack\-selector\fP, \fIconfig.stack\-selector\-anchor\fP, \fIconfig.skip\-window\-focus\-animation\fP, \fIconfig.layout\fP, \fIconfig.split\-type\fP, \fIconfig.split\-ratio\fP, \fIconfig.top\-padding\fP, \fIconfig.bottom\-padding\fP, \fIconfig.left\-padding\fP, \fIconfig.right\-padding\fP, \fIconfig.window\-gap\fP, \fIconfig.auto\-balance\fP
+.RE
+.SS "SKHD EXAMPLES"
+.sp
+.if n .RS 4
+.nf
+.fam C
+alt \- a\&         : yabai \-m action \-\-show
+alt \- w\&         : yabai \-m action \-\-run space.choose
+alt \- r\&         : yabai \-m action \-\-run space.relabel
+alt \- o\&         : yabai \-m action \-\-run space.layout\-cycle
+.fam
+.fi
+.if n .RE
 .SS "Config"
 .SS "General Syntax"
 .sp
@@ -241,6 +325,62 @@ Specify where new managed windows will be inserted.
 \fBwindow_zoom_persist\fP [\fI<BOOL_SEL>\fP]
 .RS 4
 Windows will keep their zoom\-state through layout changes.
+.RE
+.sp
+\fBstack_selector\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Show a clickable application\-icon selector for every window stack.
+.br
+Hovering an inactive window icon displays a window preview.
+.br
+Right\-clicking the selector opens a visual anchor grid for setting that stack\(cqs anchor or restoring the global default.
+.br
+Applies to both stack layout and stacked leaf\-nodes in bsp layout.
+.RE
+.sp
+\fBstack_selector_auto_collapse\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Collapse every stack selector into a small handle when the pointer is not over it.
+.br
+The handle expands with an animation when hovered and scales with the stack size.
+.br
+This setting applies globally and can also be toggled from the selector\(cqs right\-click menu.
+.RE
+.sp
+\fBstack_selector_anchor\fP [\fI<STACK_SELECTOR_ANCHOR>\fP]
+.RS 4
+Set the default anchor used by stack selectors.
+.br
+Valid anchors are: vertical\-top\-left, vertical\-center\-left, vertical\-bottom\-left, vertical\-top\-right, vertical\-center\-right, vertical\-bottom\-right, horizontal\-left\-top, horizontal\-center\-top, horizontal\-right\-top, horizontal\-left\-bottom, horizontal\-center\-bottom, horizontal\-right\-bottom.
+.RE
+.sp
+\fBstatus_island\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Show a dynamic\-island style status pill merged with the notch.
+.br
+The left wing shows the focused workspace name and the right wing shows the focused space layout.
+.br
+Clicking the left wing opens a workspace selector; clicking the right wing opens a layout selector.
+.br
+Enabled by default.
+.RE
+.sp
+\fBstatus_island_workspace_order\fP [\fI<index|alphabetical|creation>\fP]
+.RS 4
+Order the remaining workspaces in the workspace selector dropdown.
+.br
+The focused workspace is always shown first.
+.br
+\fIindex\fP sorts by mission\-control index, \fIalphabetical\fP by label, and \fIcreation\fP by space creation order.
+.RE
+.sp
+\fBspace_cleaner\fP [\fI<BOOL_SEL>\fP]
+.RS 4
+Automatically destroy empty, non\-visible spaces.
+.br
+Runs when a window is destroyed or moved to another space, and when the visible space changes.
+.br
+The visible space and the last remaining user space on each display are never destroyed.
 .RE
 .sp
 \fBskip_window_focus_animation\fP [\fI<BOOL_SEL>\fP]
@@ -597,6 +737,15 @@ Stack the given window on top of the selected window.
 Any kind of warp operation performed on a stacked window will unstack it.
 .RE
 .sp
+\fB\-\-stack\-selector\-anchor\fP [\fI<STACK_SELECTOR_ANCHOR>|next|prev|default\fP]
+.RS 4
+Set or query the stack\-selector anchor for the selected window\(cqs stack.
+.br
+The values \fInext\fP and \fIprev\fP cycle through all anchor ports.
+.br
+The value \fIdefault\fP removes the per\-stack override and follows the global \fIstack_selector_anchor\fP setting.
+.RE
+.sp
 \fB\-\-insert\fP \fI<DIR_SEL>|stack\fP
 .RS 4
 Set the splitting mode of the selected window.
@@ -691,7 +840,7 @@ A newly focused top\-level window opened while a visible scratch stack owns focu
 .br
 Focusing or ordering in any member presents the complete stack and makes that member active.
 .br
-Use \fB\-\-toggle <LABEL>\fP to show or hide every member of the named stack.
+Use \fI\-\-toggle <LABEL>\fP to show or hide every member of the named stack.
 .br
 The special value \fIrecover\fP can be used to forcefully bring all scratch stack windows to the front.
 .br

@@ -244,6 +244,11 @@ Global Settings
     Right-clicking the selector opens a visual anchor grid for setting that stack's anchor or restoring the global default. +
     Applies to both stack layout and stacked leaf-nodes in bsp layout.
 
+*stack_selector_auto_collapse* ['<BOOL_SEL>']::
+    Collapse every stack selector into a small handle when the pointer is not over it. +
+    The handle expands with an animation when hovered and scales with the stack size. +
+    This setting applies globally and can also be toggled from the selector's right-click menu.
+
 *stack_selector_anchor* ['<STACK_SELECTOR_ANCHOR>']::
     Set the default anchor used by stack selectors. +
     Valid anchors are: vertical-top-left, vertical-center-left, vertical-bottom-left, vertical-top-right, vertical-center-right, vertical-bottom-right, horizontal-left-top, horizontal-center-top, horizontal-right-top, horizontal-left-bottom, horizontal-center-bottom, horizontal-right-bottom.
