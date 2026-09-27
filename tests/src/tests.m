@@ -14,6 +14,7 @@ typedef TEST_SIG(function);
 #include "area.c"
 #include "command_palette.c"
 #include "scratch_stack.c"
+#include "stack_order.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -26,7 +27,8 @@ typedef TEST_SIG(function);
     TEST_ENTRY(space_workflow_layout_cycle)                    \
     TEST_ENTRY(scratch_stack_frame_is_initialized_once)        \
     TEST_ENTRY(scratch_stack_tracks_membership_and_mru)        \
-    TEST_ENTRY(scratch_stack_removal_preserves_frame)
+    TEST_ENTRY(scratch_stack_removal_preserves_frame)          \
+    TEST_ENTRY(window_node_reorder_preserves_order)
 
 static struct {
     char *name;

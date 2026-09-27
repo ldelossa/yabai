@@ -210,6 +210,8 @@ void window_manager_set_window_opacity(struct window_manager *wm, struct window 
 void window_manager_set_focus_follows_mouse(struct window_manager *wm, enum ffm_mode mode);
 enum window_op_error window_manager_set_window_insertion(struct space_manager *sm, struct window *window, int direction);
 enum window_op_error window_manager_stack_window(struct space_manager *sm, struct window_manager *wm, struct window *a, struct window *b);
+void window_manager_unstack_window(struct space_manager *sm, struct window_manager *wm, struct window *window);
+void window_manager_move_window_to_stack(struct space_manager *sm, struct window_manager *wm, struct window *src_window, struct window *dst_window);
 enum window_op_error window_manager_warp_window(struct space_manager *sm, struct window_manager *wm, struct window *a, struct window *b);
 enum window_op_error window_manager_swap_window(struct space_manager *sm, struct window_manager *wm, struct window *a, struct window *b);
 enum window_op_error window_manager_minimize_window(struct window *window);

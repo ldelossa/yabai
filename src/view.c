@@ -408,6 +408,36 @@ int window_node_index_of_window(struct window_node *node, uint32_t window_id)
     return 0;
 }
 
+void window_node_reorder_window(struct window_node *node, uint32_t window_id, int target_index)
+{
+    if (!node || node->window_count <= 1) return;
+
+    int current_index = -1;
+    for (int i = 0; i < node->window_count; ++i) {
+        if (node->window_list[i] == window_id) {
+            current_index = i;
+            break;
+        }
+    }
+    if (current_index == -1) return;
+
+    if (target_index < 0) target_index = 0;
+    if (target_index >= node->window_count) target_index = node->window_count - 1;
+    if (current_index == target_index) return;
+
+    uint32_t moving = node->window_list[current_index];
+    if (current_index < target_index) {
+        memmove(node->window_list + current_index,
+                node->window_list + current_index + 1,
+                sizeof(uint32_t) * (target_index - current_index));
+    } else {
+        memmove(node->window_list + target_index + 1,
+                node->window_list + target_index,
+                sizeof(uint32_t) * (current_index - target_index));
+    }
+    node->window_list[target_index] = moving;
+}
+
 void window_node_swap_window_list(struct window_node *a_node, struct window_node *b_node)
 {
     uint32_t tmp_window_list[NODE_MAX_WINDOW_COUNT];

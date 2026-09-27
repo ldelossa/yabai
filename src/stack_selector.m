@@ -32,14 +32,19 @@ char *g_stack_selector_anchor_str[] =
 };
 static uint64_t g_stack_selector_next_id = 1;
 
+@class stack_selector_view;
+
 @interface stack_selector_panel : NSPanel {
     enum stack_selector_anchor _stackSelectorAnchor;
+    stack_selector_view *_selectorView;
 }
 @property enum stack_selector_anchor stackSelectorAnchor;
+@property(assign) stack_selector_view *selectorView;
 @end
 
 @implementation stack_selector_panel
 @synthesize stackSelectorAnchor = _stackSelectorAnchor;
+@synthesize selectorView = _selectorView;
 - (BOOL)canBecomeKeyWindow
 {
     return NO;
@@ -52,6 +57,10 @@ static uint64_t g_stack_selector_next_id = 1;
 @end
 
 static void stack_selector_hover_changed(uint64_t selector_id, uint32_t window_id, pid_t pid);
+static void stack_selector_show_ghost(NSImage *icon, NSPoint point);
+static void stack_selector_move_ghost(NSPoint point);
+static void stack_selector_hide_ghost(void);
+static bool stack_selector_window_id_at_point(uint32_t *window_id, NSPoint point, uint64_t exclude_id);
 
 static inline bool stack_selector_anchor_is_horizontal(enum stack_selector_anchor anchor)
 {
@@ -341,6 +350,9 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     bool _horizontal;
     NSInteger _hovered_index;
     NSTrackingArea *_tracking_area;
+    NSInteger _drag_index;
+    NSPoint _drag_start_location;
+    bool _drag_active;
 }
 - (instancetype)initWithFrame:(NSRect)frame selectorId:(uint64_t)selector_id;
 - (void)updateWithWindowIds:(NSArray *)window_ids
@@ -357,6 +369,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     if (self) {
         _selector_id = selector_id;
         _hovered_index = -1;
+        _drag_index = -1;
     }
     return self;
 }
@@ -457,6 +470,20 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     return index >= 0 && index < (NSInteger)_window_ids.count ? index : -1;
 }
 
+- (uint32_t)windowIdAtIndex:(NSInteger)index
+{
+    if (index < 0 || index >= (NSInteger)_window_ids.count) return 0;
+    return [_window_ids[index] unsignedIntValue];
+}
+
+- (NSImage *)iconAtIndex:(NSInteger)index
+{
+    if (index < 0 || index >= (NSInteger)_icons.count) return nil;
+    id value = _icons[index];
+    if (value == [NSNull null]) return nil;
+    return value;
+}
+
 - (void)mouseMoved:(NSEvent *)event
 {
     NSInteger index = [self indexAtPoint:[self convertPoint:event.locationInWindow fromView:nil]];
@@ -490,12 +517,81 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
 
 - (void)mouseDown:(NSEvent *)event
 {
-    NSInteger index = [self indexAtPoint:[self convertPoint:event.locationInWindow fromView:nil]];
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    NSInteger index = [self indexAtPoint:point];
     if (index < 0) return;
 
-    uint32_t window_id = [_window_ids[index] unsignedIntValue];
+    _drag_index = index;
+    _drag_start_location = point;
+    _drag_active = false;
+    _hovered_index = -1;
     stack_selector_hover_changed(_selector_id, 0, 0);
-    event_loop_post(&g_event_loop, STACK_SELECTOR_SELECTED, (void *)(uintptr_t)window_id, 0);
+    [self setNeedsDisplay:YES];
+}
+
+- (void)mouseDragged:(NSEvent *)event
+{
+    if (_drag_index < 0) return;
+
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    if (!_drag_active &&
+        (fabs(point.x - _drag_start_location.x) > 3.0f || fabs(point.y - _drag_start_location.y) > 3.0f)) {
+        _drag_active = true;
+        stack_selector_show_ghost([self iconAtIndex:_drag_index], [NSEvent mouseLocation]);
+    }
+
+    if (_drag_active) {
+        stack_selector_move_ghost([NSEvent mouseLocation]);
+        NSInteger index = [self indexAtPoint:point];
+        if (index != _hovered_index) {
+            _hovered_index = index;
+            [self setNeedsDisplay:YES];
+        }
+    }
+}
+
+- (void)mouseUp:(NSEvent *)event
+{
+    if (_drag_index < 0) return;
+
+    stack_selector_hide_ghost();
+
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    NSInteger index = _drag_index;
+    bool was_drag = _drag_active;
+
+    _drag_index = -1;
+    _drag_active = false;
+    _hovered_index = -1;
+    [self setNeedsDisplay:YES];
+    stack_selector_hover_changed(_selector_id, 0, 0);
+
+    if (index < 0 || index >= (NSInteger)_window_ids.count) return;
+    uint32_t window_id = [_window_ids[index] unsignedIntValue];
+    if (!window_id) return;
+
+    if (!was_drag) {
+        event_loop_post(&g_event_loop, STACK_SELECTOR_SELECTED, (void *)(uintptr_t)window_id, 0);
+        return;
+    }
+
+    if (!NSPointInRect(point, self.bounds)) {
+        uint32_t dst_window_id = 0;
+        if (stack_selector_window_id_at_point(&dst_window_id, [NSEvent mouseLocation], _selector_id) && dst_window_id) {
+            event_loop_post(&g_event_loop, STACK_SELECTOR_MOVED, (void *)(uintptr_t)window_id, (int)dst_window_id);
+        } else {
+            event_loop_post(&g_event_loop, STACK_SELECTOR_REMOVED, (void *)(uintptr_t)window_id, 0);
+        }
+        return;
+    }
+
+    NSInteger target = [self indexAtPoint:point];
+    if (target < 0) target = index;
+    if (target != index) {
+        event_loop_post(&g_event_loop, STACK_SELECTOR_REORDERED, (void *)(uintptr_t)window_id, (int)target);
+    } else {
+        event_loop_post(&g_event_loop, STACK_SELECTOR_SELECTED, (void *)(uintptr_t)window_id, 0);
+    }
 }
 
 - (void)rightMouseDown:(NSEvent *)event
@@ -680,6 +776,8 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     uint64_t _preview_generation;
     uint64_t _hovered_selector_id;
     uint32_t _hovered_window_id;
+    stack_selector_panel *_ghost_panel;
+    NSImageView *_ghost_image_view;
 }
 + (instancetype)sharedController;
 - (void)updateSelector:(uint64_t)selector_id
@@ -699,6 +797,10 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
                          title:(NSString *)window_title API_AVAILABLE(macos(27.0));
 - (void)hidePreview;
 - (void)hideAll;
+- (void)showGhostWithIcon:(NSImage *)icon atPoint:(NSPoint)point;
+- (void)moveGhostToPoint:(NSPoint)point;
+- (void)hideGhost;
+- (BOOL)windowId:(uint32_t *)window_id atGlobalPoint:(NSPoint)point excludingSelectorId:(uint64_t)exclude_id;
 @end
 
 @implementation stack_selector_controller
@@ -728,6 +830,8 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
     }
     [_preview_panel close];
     [_preview_panel release];
+    [_ghost_panel close];
+    [_ghost_panel release];
     [_panels release];
     [super dealloc];
 }
@@ -768,6 +872,7 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
         surface.effectIsInteractive = YES;
         surface.contentView = view;
         panel.contentView = surface;
+        panel.selectorView = view;
         [view release];
         [surface release];
 
@@ -987,11 +1092,93 @@ static inline bool stack_selector_anchor_is_top(enum stack_selector_anchor ancho
         [panel orderOut:nil];
     }
 }
+
+- (void)showGhostWithIcon:(NSImage *)icon atPoint:(NSPoint)point
+{
+    if (!_ghost_panel) {
+        _ghost_panel = [[stack_selector_panel alloc] initWithContentRect:NSMakeRect(0, 0, 32, 32)
+                                                              styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                                backing:NSBackingStoreBuffered
+                                                                  defer:NO];
+        _ghost_panel.opaque = NO;
+        _ghost_panel.backgroundColor = NSColor.clearColor;
+        _ghost_panel.hasShadow = YES;
+        _ghost_panel.ignoresMouseEvents = YES;
+        _ghost_panel.animationBehavior = NSWindowAnimationBehaviorNone;
+        _ghost_panel.level = NSStatusWindowLevel;
+
+        _ghost_image_view = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 32, 32)];
+        _ghost_image_view.imageScaling = NSImageScaleProportionallyUpOrDown;
+        _ghost_image_view.alphaValue = 0.6f;
+        _ghost_panel.contentView = _ghost_image_view;
+        [_ghost_image_view release];
+    }
+
+    _ghost_image_view.image = icon;
+    [self moveGhostToPoint:point];
+    [_ghost_panel orderFrontRegardless];
+}
+
+- (void)moveGhostToPoint:(NSPoint)point
+{
+    if (!_ghost_panel) return;
+
+    NSRect frame = _ghost_panel.frame;
+    frame.origin.x = point.x - frame.size.width / 2.0f;
+    frame.origin.y = point.y - frame.size.height / 2.0f;
+    [_ghost_panel setFrameOrigin:frame.origin];
+}
+
+- (void)hideGhost
+{
+    if (_ghost_panel) [_ghost_panel orderOut:nil];
+}
+
+- (BOOL)windowId:(uint32_t *)window_id atGlobalPoint:(NSPoint)point excludingSelectorId:(uint64_t)exclude_id
+{
+    for (NSNumber *key in _panels) {
+        uint64_t selector_id = key.unsignedLongLongValue;
+        if (selector_id == exclude_id) continue;
+
+        stack_selector_panel *panel = _panels[key];
+        if (!NSPointInRect(point, panel.frame)) continue;
+
+        stack_selector_view *view = panel.selectorView;
+        NSPoint base = [panel convertPointFromScreen:point];
+        NSPoint local = [view convertPoint:base fromView:nil];
+        uint32_t wid = [view windowIdAtIndex:[view indexAtPoint:local]];
+        if (wid) {
+            *window_id = wid;
+            return YES;
+        }
+    }
+    return NO;
+}
 @end
 
 static void stack_selector_hover_changed(uint64_t selector_id, uint32_t window_id, pid_t pid)
 {
     [[stack_selector_controller sharedController] hoverSelector:selector_id windowId:window_id pid:pid];
+}
+
+static void stack_selector_show_ghost(NSImage *icon, NSPoint point)
+{
+    [[stack_selector_controller sharedController] showGhostWithIcon:icon atPoint:point];
+}
+
+static void stack_selector_move_ghost(NSPoint point)
+{
+    [[stack_selector_controller sharedController] moveGhostToPoint:point];
+}
+
+static void stack_selector_hide_ghost(void)
+{
+    [[stack_selector_controller sharedController] hideGhost];
+}
+
+static bool stack_selector_window_id_at_point(uint32_t *window_id, NSPoint point, uint64_t exclude_id)
+{
+    return [[stack_selector_controller sharedController] windowId:window_id atGlobalPoint:point excludingSelectorId:exclude_id];
 }
 
 static void stack_selector_dispatch_update(uint64_t selector_id,
