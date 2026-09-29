@@ -8,9 +8,13 @@ enum status_island_workspace_order g_status_island_workspace_order = STATUS_ISLA
 static bool g_status_island_dirty;
 
 #define STATUS_ISLAND_HEIGHT 30.0f
-#define STATUS_ISLAND_WING_WIDTH 108.0f
+#define STATUS_ISLAND_WING_MIN_WIDTH 80.0f
+#define STATUS_ISLAND_WING_DEFAULT_WIDTH 108.0f
+#define STATUS_ISLAND_LAYOUT_WING_WIDTH 100.0f
+#define STATUS_ISLAND_WING_MAX_CHARS 64
 #define STATUS_ISLAND_CORNER_RADIUS 15.0f
 #define STATUS_ISLAND_PADDING 14.0f
+#define STATUS_ISLAND_SHADOW_MARGIN 28.0f
 
 static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height, CGFloat radius)
 {
@@ -50,25 +54,44 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 @interface status_island_surface : NSView {
     CGFloat _cornerRadius;
     id _island;
+    id _clipView;
 }
 @property(assign) CGFloat cornerRadius;
 @property(assign) id island;
+@property(assign) id clipView;
 @end
 
 @implementation status_island_surface
 @synthesize cornerRadius = _cornerRadius;
 @synthesize island = _island;
+@synthesize clipView = _clipView;
 
 - (void)layout
 {
     [super layout];
 
     self.wantsLayer = YES;
-    self.layer.backgroundColor = NSColor.blackColor.CGColor;
+    self.layer.backgroundColor = NSColor.clearColor.CGColor;
 
-    CAShapeLayer *mask = [CAShapeLayer layer];
-    mask.path = status_island_bottom_rounded_path(self.bounds.size.width, self.bounds.size.height, _cornerRadius);
-    self.layer.mask = mask;
+    CGPathRef path = status_island_bottom_rounded_path(self.bounds.size.width, self.bounds.size.height, _cornerRadius);
+
+    NSView *clipView = (NSView *)_clipView;
+    if (clipView) {
+        clipView.frame = self.bounds;
+        clipView.wantsLayer = YES;
+        clipView.layer.backgroundColor = NSColor.blackColor.CGColor;
+        CAShapeLayer *mask = [CAShapeLayer layer];
+        mask.path = path;
+        clipView.layer.mask = mask;
+    }
+
+    self.layer.shadowPath = path;
+    self.layer.shadowColor = NSColor.blackColor.CGColor;
+    self.layer.shadowOpacity = 0.8f;
+    self.layer.shadowRadius = 18.0f;
+    self.layer.shadowOffset = CGSizeMake(0.0f, -7.0f);
+
+    CGPathRelease(path);
 
     [_island performSelector:@selector(layoutWings)];
 }
@@ -88,6 +111,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 @property(assign) id target;
 @property(assign) bool mirrored;
 @property(readonly) NSTextField *label;
+@property(readonly) NSTextField *sub;
 @property(readonly) NSImageView *icon;
 - (void)setSymbolName:(NSString *)symbolName;
 - (void)setLabelText:(NSString *)text;
@@ -101,6 +125,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 @synthesize target = _target;
 @synthesize mirrored = _mirrored;
 @synthesize label = _label;
+@synthesize sub = _sub;
 @synthesize icon = _icon;
 
 - (instancetype)initWithSymbolName:(NSString *)symbolName mirrored:(bool)mirrored
@@ -409,6 +434,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     uint64_t _focused_sid;
     enum view_type _focused_layout;
     CGFloat _notch_width;
+    CGFloat _workspace_wing_width;
     CGFloat _notch_height;
     CGFloat _notch_center_x;
     CGFloat _screen_top_y;
@@ -429,6 +455,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     if (self) {
         _did = did;
         _space_items = [[NSMutableArray alloc] init];
+        _workspace_wing_width = STATUS_ISLAND_WING_DEFAULT_WIDTH;
     }
     return self;
 }
@@ -455,6 +482,42 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
         }
     }
     return nil;
+}
+
+- (CGFloat)islandWidth
+{
+    return _collapsed ? _notch_width : _workspace_wing_width + _notch_width + STATUS_ISLAND_LAYOUT_WING_WIDTH;
+}
+
+- (NSRect)panelFrame
+{
+    CGFloat leftWing = _collapsed ? 0.0f : _workspace_wing_width;
+    CGFloat rightWing = _collapsed ? 0.0f : STATUS_ISLAND_LAYOUT_WING_WIDTH;
+    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
+    CGFloat notchLeft = _notch_center_x - _notch_width / 2.0f;
+
+    return NSMakeRect(notchLeft - leftWing - margin,
+                      _screen_top_y - (_notch_height + margin),
+                      leftWing + _notch_width + rightWing + 2.0f * margin,
+                      _notch_height + margin);
+}
+
+- (CGFloat)workspaceWingWidthForName:(NSString *)name
+{
+    NSString *measured = name;
+    if (measured.length > STATUS_ISLAND_WING_MAX_CHARS) {
+        measured = [measured substringToIndex:STATUS_ISLAND_WING_MAX_CHARS];
+    }
+    if (!measured.length) measured = @" ";
+
+    NSTextField *probe = [NSTextField labelWithString:measured];
+    probe.font = _workspace_wing.label.font;
+    CGFloat labelWidth = ceil(probe.intrinsicContentSize.width);
+    CGFloat subWidth = ceil(_workspace_wing.sub.intrinsicContentSize.width);
+    CGFloat textWidth = MAX(labelWidth, subWidth) + 4.0f;
+
+    CGFloat wingWidth = STATUS_ISLAND_PADDING * 2.0f + 14.0f + 7.0f + textWidth;
+    return MAX(wingWidth, STATUS_ISLAND_WING_MIN_WIDTH);
 }
 
 - (void)show
@@ -488,13 +551,11 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     _screen_top_y = screen.frame.origin.y + screen.frame.size.height;
 
     if (!_panel) {
-    CGFloat width = _notch_width + 2.0f * STATUS_ISLAND_WING_WIDTH;
+    CGFloat width = [self islandWidth];
     CGFloat height = _notch_height;
+    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
 
-    NSRect frame = NSMakeRect(_notch_center_x - width / 2.0f,
-                              _screen_top_y - height,
-                              width,
-                              height);
+    NSRect frame = [self panelFrame];
 
     _panel = [[status_island_panel alloc] initWithContentRect:frame
                                                     styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
@@ -511,23 +572,34 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     _panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
     _panel.acceptsMouseMovedEvents = YES;
 
-    _surface = [[status_island_surface alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+    container.wantsLayer = YES;
+    _panel.contentView = container;
+    [container release];
+
+    _surface = [[status_island_surface alloc] initWithFrame:NSMakeRect(margin, margin, width, height)];
     _surface.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _surface.cornerRadius = STATUS_ISLAND_CORNER_RADIUS;
     _surface.island = self;
-    _panel.contentView = _surface;
+    [container addSubview:_surface];
+
+    NSView *clipView = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    clipView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [_surface addSubview:clipView];
+    _surface.clipView = clipView;
+    [clipView release];
 
     _workspace_wing = [[status_island_wing alloc] initWithSymbolName:@"rectangle.3.group" mirrored:false];
     _workspace_wing.action = @selector(workspaceWingClicked:);
     _workspace_wing.target = self;
     [_workspace_wing setSubText:@"WORKSPACE"];
-    [_surface addSubview:_workspace_wing];
+    [clipView addSubview:_workspace_wing];
 
     _layout_wing = [[status_island_wing alloc] initWithSymbolName:@"rectangle.stack" mirrored:true];
     _layout_wing.action = @selector(layoutWingClicked:);
     _layout_wing.target = self;
     [_layout_wing setSubText:@"LAYOUT"];
-    [_surface addSubview:_layout_wing];
+    [clipView addSubview:_layout_wing];
 
     [_surface release];
     [_workspace_wing release];
@@ -548,23 +620,16 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     CGFloat width = _surface.bounds.size.width;
     CGFloat height = _surface.bounds.size.height;
-    CGFloat wingWidth = (width - _notch_width) / 2.0f;
 
-    _workspace_wing.frame = NSMakeRect(0, 0, wingWidth, height);
-    _layout_wing.frame = NSMakeRect(width - wingWidth, 0, wingWidth, height);
+    _workspace_wing.frame = NSMakeRect(0, 0, _workspace_wing_width, height);
+    _layout_wing.frame = NSMakeRect(width - STATUS_ISLAND_LAYOUT_WING_WIDTH, 0, STATUS_ISLAND_LAYOUT_WING_WIDTH, height);
 }
 
 - (void)applyFrameAnimated:(bool)animated
 {
     if (!_panel) return;
 
-    CGFloat width = _collapsed ? _notch_width : _notch_width + 2.0f * STATUS_ISLAND_WING_WIDTH;
-    CGFloat height = _notch_height;
-
-    NSRect frame = NSMakeRect(_notch_center_x - width / 2.0f,
-                              _screen_top_y - height,
-                              width,
-                              height);
+    NSRect frame = [self panelFrame];
 
     if (animated) {
         [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
@@ -577,6 +642,19 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     }
 }
 
+- (void)applyStretchFrameAnimated
+{
+    if (!_panel) return;
+
+    NSRect frame = [self panelFrame];
+
+    [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
+        context.duration = 0.32f;
+        context.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.34f :1.56f :0.64f :1.0f];
+        [[_panel animator] setFrame:frame display:YES];
+    } completionHandler:nil];
+}
+
 - (void)setCollapsed:(bool)collapsed
 {
     if (_collapsed == collapsed || !_panel) return;
@@ -586,6 +664,9 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
         [self dismissMenus];
         [_workspace_wing stopMarquee];
     }
+
+    _workspace_wing.hidden = collapsed;
+    _layout_wing.hidden = collapsed;
 
     [self applyFrameAnimated:YES];
 }
@@ -617,13 +698,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 - (void)addOutsideClickMonitor
 {
     if (_event_monitor) return;
-    _event_monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
-                                                           handler:^NSEvent *(NSEvent *event) {
-        NSWindow *window = event.window;
-        if (window != _panel && window != _workspace_menu && window != _layout_menu) {
+    _event_monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
+                                                           handler:^(NSEvent *event) {
+        NSPoint location = [NSEvent mouseLocation];
+        bool inMenu = (_workspace_menu && _workspace_menu.visible && NSPointInRect(location, _workspace_menu.frame)) ||
+                      (_layout_menu && _layout_menu.visible && NSPointInRect(location, _layout_menu.frame));
+        if (!inMenu) {
             [self dismissMenus];
         }
-        return event;
     }];
 }
 
@@ -631,14 +713,15 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     CGFloat rowHeight = 30.0f;
     CGFloat height = rowCount * rowHeight + 12.0f;
+    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
 
-    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)
                                                 styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
     panel.opaque = NO;
     panel.backgroundColor = NSColor.clearColor;
-    panel.hasShadow = YES;
+    panel.hasShadow = NO;
     panel.hidesOnDeactivate = NO;
     panel.releasedWhenClosed = NO;
     panel.ignoresMouseEvents = NO;
@@ -646,12 +729,27 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     panel.level = NSStatusWindowLevel;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
 
-    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)];
+    container.wantsLayer = YES;
+    container.layer.backgroundColor = NSColor.clearColor.CGColor;
+
+    CGPathRef shadowPath = CGPathCreateWithRoundedRect(CGRectMake(margin, margin, width, height), 13.0f, 13.0f, NULL);
+    container.layer.shadowPath = shadowPath;
+    container.layer.shadowColor = NSColor.blackColor.CGColor;
+    container.layer.shadowOpacity = 0.7f;
+    container.layer.shadowRadius = 14.0f;
+    container.layer.shadowOffset = CGSizeMake(0.0f, -5.0f);
+    CGPathRelease(shadowPath);
+
+    panel.contentView = container;
+    [container release];
+
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(margin, margin, width, height)];
     content.wantsLayer = YES;
     content.layer.backgroundColor = [NSColor colorWithWhite:0.07f alpha:0.98f].CGColor;
     content.layer.cornerRadius = 13.0f;
     content.layer.masksToBounds = YES;
-    panel.contentView = content;
+    [container addSubview:content];
     [content release];
 
     return panel;
@@ -662,7 +760,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     if (_workspace_menu) return;
 
     _workspace_menu = [self makeMenuPanelWithWidth:230.0f rowCount:_space_items.count];
-    NSView *content = _workspace_menu.contentView;
+    NSView *content = [_workspace_menu.contentView.subviews objectAtIndex:0];
     CGFloat rowHeight = 30.0f;
     for (int i = 0; i < (int)_space_items.count; ++i) {
         native_palette_item *item = _space_items[i];
@@ -682,7 +780,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     if (_layout_menu) return;
 
     _layout_menu = [self makeMenuPanelWithWidth:150.0f rowCount:3];
-    NSView *content = _layout_menu.contentView;
+    NSView *content = [_layout_menu.contentView.subviews objectAtIndex:0];
     CGFloat rowHeight = 30.0f;
     enum view_type layouts[] = { VIEW_BSP, VIEW_STACK, VIEW_FLOAT };
     for (int i = 0; i < 3; ++i) {
@@ -709,7 +807,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     NSRect islandFrame = _panel.frame;
     NSRect menuFrame = _workspace_menu.frame;
     menuFrame.origin.x = islandFrame.origin.x;
-    menuFrame.origin.y = islandFrame.origin.y - menuFrame.size.height - 6.0f;
+    menuFrame.origin.y = islandFrame.origin.y + STATUS_ISLAND_SHADOW_MARGIN - menuFrame.size.height - 6.0f;
     [_workspace_menu setFrame:menuFrame display:NO];
     [_workspace_menu orderFrontRegardless];
     [self addOutsideClickMonitor];
@@ -727,7 +825,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     NSRect islandFrame = _panel.frame;
     NSRect menuFrame = _layout_menu.frame;
     menuFrame.origin.x = islandFrame.origin.x + islandFrame.size.width - menuFrame.size.width;
-    menuFrame.origin.y = islandFrame.origin.y - menuFrame.size.height - 6.0f;
+    menuFrame.origin.y = islandFrame.origin.y + STATUS_ISLAND_SHADOW_MARGIN - menuFrame.size.height - 6.0f;
     [_layout_menu setFrame:menuFrame display:NO];
     [_layout_menu orderFrontRegardless];
     [self addOutsideClickMonitor];
@@ -790,6 +888,9 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
 - (void)updateWithSnapshot:(struct space_workflow_snapshot *)snapshot
 {
+    bool existed = (_panel != nil);
+    CGFloat oldWingWidth = _workspace_wing_width;
+
     [self show];
     if (!_panel) return;
 
@@ -868,6 +969,18 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     [_workspace_wing setLabelText:workspace_name];
     [_layout_wing setSymbolName:[self layoutSymbolName:current_layout]];
     [_layout_wing setLabelText:[self layoutName:current_layout]];
+
+    CGFloat newWingWidth = [self workspaceWingWidthForName:workspace_name];
+    if (fabs(newWingWidth - oldWingWidth) > 0.5f) {
+        _workspace_wing_width = newWingWidth;
+        if (existed && !_collapsed) {
+            [self applyStretchFrameAnimated];
+        } else {
+            [self applyFrameAnimated:NO];
+            [self layoutWings];
+        }
+    }
+
     [self invalidateMenus];
     [_panel orderFrontRegardless];
 }
