@@ -10,6 +10,22 @@ TEST_FUNC(command_palette_action_lookup, {
     TEST_CHECK(scratch_assign != NULL, true);
     TEST_CHECK(command_palette_picker_kind_for_action(scratch_assign) == COMMAND_PALETTE_PICKER_NONE, true);
 
+    const struct command_palette_action *scratch_add = command_palette_find_action("window.scratchpad-add");
+    TEST_CHECK(scratch_add != NULL, true);
+    TEST_CHECK(scratch_add && scratch_add->kind == COMMAND_PALETTE_ACTION_NATIVE, true);
+    TEST_CHECK(scratch_add && scratch_add->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD, true);
+    TEST_CHECK(scratch_add && scratch_add->argument_mode == COMMAND_PALETTE_ARGUMENT_NONE, true);
+    TEST_CHECK(scratch_add && scratch_add->destructive == false, true);
+    TEST_CHECK(command_palette_picker_kind_for_action(scratch_add) == COMMAND_PALETTE_PICKER_NONE, true);
+
+    const struct command_palette_action *scratch_remove = command_palette_find_action("window.scratchpad-remove");
+    TEST_CHECK(scratch_remove != NULL, true);
+    TEST_CHECK(scratch_remove && scratch_remove->kind == COMMAND_PALETTE_ACTION_NATIVE, true);
+    TEST_CHECK(scratch_remove && scratch_remove->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE, true);
+    TEST_CHECK(scratch_remove && scratch_remove->argument_mode == COMMAND_PALETTE_ARGUMENT_NONE, true);
+    TEST_CHECK(scratch_remove && scratch_remove->destructive == false, true);
+    TEST_CHECK(command_palette_picker_kind_for_action(scratch_remove) == COMMAND_PALETTE_PICKER_NONE, true);
+
     const struct command_palette_action *scratch_toggle = command_palette_find_action("window.scratchpad-toggle");
     TEST_CHECK(scratch_toggle != NULL, true);
     TEST_CHECK(scratch_toggle && string_equals(scratch_toggle->command, "--toggle"), true);
@@ -83,4 +99,23 @@ TEST_FUNC(space_workflow_layout_cycle, {
     TEST_CHECK(space_workflow_next_layout(VIEW_STACK) == VIEW_BSP, true);
     TEST_CHECK(space_workflow_next_layout(VIEW_BSP) == VIEW_FLOAT, true);
     TEST_CHECK(space_workflow_next_layout(VIEW_FLOAT) == VIEW_STACK, true);
+})
+
+TEST_FUNC(command_palette_scratchpad_add_resolution, {
+    struct window_manager wm = {0};
+    struct scratchpad *resolved = NULL;
+
+    TEST_CHECK(command_palette_resolve_scratchpad(&wm, &resolved) == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_NONE, true);
+    TEST_CHECK(resolved == NULL, true);
+
+    buf_push(wm.scratchpads, ((struct scratchpad){ .label = "notes" }));
+    TEST_CHECK(command_palette_resolve_scratchpad(&wm, &resolved) == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_SINGLE, true);
+    TEST_CHECK(resolved == &wm.scratchpads[0], true);
+    TEST_CHECK(string_equals(resolved->label, "notes"), true);
+
+    buf_push(wm.scratchpads, ((struct scratchpad){ .label = "terminals" }));
+    TEST_CHECK(command_palette_resolve_scratchpad(&wm, &resolved) == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE, true);
+    TEST_CHECK(resolved == NULL, true);
+
+    buf_free(wm.scratchpads);
 })

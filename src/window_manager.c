@@ -2485,7 +2485,7 @@ void window_manager_toggle_window_pip(struct space_manager *sm, struct window *w
     scripting_addition_scale_window(window->id, bounds.origin.x, bounds.origin.y, bounds.size.width, bounds.size.height);
 }
 
-static struct scratchpad *window_manager_find_scratchpad_by_label(struct window_manager *wm, char *label)
+struct scratchpad *window_manager_find_scratchpad_by_label(struct window_manager *wm, char *label)
 {
     if (!label) return NULL;
 
@@ -2796,7 +2796,10 @@ bool window_manager_assign_scratchpad_for_window(struct window_manager *wm, stru
         free(label);
         return true;
     }
-    if (scratchpad && scratchpad->node.window_count >= NODE_MAX_WINDOW_COUNT) return false;
+    if (scratchpad && scratchpad->node.window_count >= NODE_MAX_WINDOW_COUNT) {
+        free(label);
+        return false;
+    }
 
     CGRect current_frame = window_ax_frame(window);
     CGRect restore_frame = current_frame;
@@ -2841,6 +2844,7 @@ bool window_manager_assign_scratchpad_for_window(struct window_manager *wm, stru
             scratchpad_set_active(wm, scratchpad->label);
         }
     } else if (assignment == SCRATCHPAD_ASSIGN_AUTOMATIC ||
+               assignment == SCRATCHPAD_ASSIGN_PALETTE ||
                (assignment == SCRATCHPAD_ASSIGN_COMMAND && wm->focused_window_id == window->id)) {
         scratchpad_present(wm, scratchpad, window);
     } else {

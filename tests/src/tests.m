@@ -25,8 +25,10 @@ typedef TEST_SIG(function);
     TEST_ENTRY(command_palette_message_construction)           \
     TEST_ENTRY(command_palette_catalog_integrity)              \
     TEST_ENTRY(space_workflow_layout_cycle)                    \
+    TEST_ENTRY(command_palette_scratchpad_add_resolution)      \
     TEST_ENTRY(scratch_stack_frame_is_initialized_once)        \
     TEST_ENTRY(scratch_stack_tracks_membership_and_mru)        \
+    TEST_ENTRY(scratch_stack_lookup_by_label)                  \
     TEST_ENTRY(scratch_stack_removal_preserves_frame)          \
     TEST_ENTRY(window_node_reorder_preserves_order)
 

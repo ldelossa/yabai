@@ -221,16 +221,17 @@ static void space_workflow_cycle_layout(void)
     space_workflow_deliver_result("", true, true);
 }
 
-void space_workflow_present_picker(const char *action_identifier, enum command_palette_picker_kind kind)
+void space_workflow_present_picker(const char *action_identifier, enum command_palette_picker_kind kind, uint32_t focused_wid)
 {
     struct space_workflow_request *request = calloc(1, sizeof(struct space_workflow_request));
     request->type = SPACE_WORKFLOW_PRESENT_PICKER;
     request->picker_kind = kind;
+    request->wid = focused_wid;
     request->text = strdup(action_identifier && *action_identifier ? action_identifier : "");
     event_loop_post(&g_event_loop, SPACE_WORKFLOW_REQUEST, request, 0);
 }
 
-static struct space_workflow_picker_snapshot *space_workflow_create_picker_snapshot(enum command_palette_picker_kind kind, const char *action_identifier)
+static struct space_workflow_picker_snapshot *space_workflow_create_picker_snapshot(enum command_palette_picker_kind kind, const char *action_identifier, uint32_t focused_wid)
 {
     struct space_workflow_snapshot *space_snapshot = space_workflow_create_space_snapshot();
     if (!space_snapshot) return NULL;
@@ -259,7 +260,17 @@ static struct space_workflow_picker_snapshot *space_workflow_create_picker_snaps
     free(space_snapshot);
 
     struct window *focused_window = window_manager_focused_window(&g_window_manager);
-    snapshot->focused_wid = focused_window ? focused_window->id : 0;
+    snapshot->focused_wid = focused_wid ? focused_wid : focused_window ? focused_window->id : 0;
+
+    if (kind == COMMAND_PALETTE_PICKER_SCRATCHPAD) {
+        snapshot->scratchpad_count = buf_len(g_window_manager.scratchpads);
+        snapshot->scratchpads = calloc(snapshot->scratchpad_count, sizeof(struct space_workflow_scratchpad_item));
+        for (int i = 0; i < snapshot->scratchpad_count; ++i) {
+            struct scratchpad *scratchpad = &g_window_manager.scratchpads[i];
+            snapshot->scratchpads[i].label = strdup(scratchpad->label);
+            snapshot->scratchpads[i].window_count = scratchpad->node.window_count;
+        }
+    }
 
     int window_count = 0;
     table_for (struct window *window, g_window_manager.window, {
@@ -285,7 +296,7 @@ static struct space_workflow_picker_snapshot *space_workflow_create_picker_snaps
 
 static void space_workflow_present_picker_snapshot(struct space_workflow_request *request)
 {
-    struct space_workflow_picker_snapshot *snapshot = space_workflow_create_picker_snapshot(request->picker_kind, request->text);
+    struct space_workflow_picker_snapshot *snapshot = space_workflow_create_picker_snapshot(request->picker_kind, request->text, request->wid);
     if (!snapshot) return;
 
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -308,6 +319,10 @@ void space_workflow_destroy_picker_snapshot(struct space_workflow_picker_snapsho
         free(snapshot->windows);
     }
     free(snapshot->displays);
+    if (snapshot->scratchpads) {
+        for (int i = 0; i < snapshot->scratchpad_count; ++i) free(snapshot->scratchpads[i].label);
+        free(snapshot->scratchpads);
+    }
     free(snapshot->action_identifier);
     free(snapshot);
 }

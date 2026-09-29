@@ -19,6 +19,7 @@ struct space_workflow_request
     enum command_palette_native_action action;
     enum command_palette_picker_kind picker_kind;
     uint64_t sid;
+    uint32_t wid;
     uint64_t generation;
     char *text;
     bool nested;
@@ -70,6 +71,12 @@ struct space_workflow_display_item
     int h;
 };
 
+struct space_workflow_scratchpad_item
+{
+    char *label;
+    int window_count;
+};
+
 struct space_workflow_picker_snapshot
 {
     enum command_palette_picker_kind kind;
@@ -80,6 +87,8 @@ struct space_workflow_picker_snapshot
     int window_count;
     struct space_workflow_display_item *displays;
     int display_count;
+    struct space_workflow_scratchpad_item *scratchpads;
+    int scratchpad_count;
     uint64_t focused_sid;
     uint32_t focused_wid;
 };
@@ -89,7 +98,7 @@ struct space_workflow_snapshot *space_workflow_create_space_snapshot(void);
 void space_workflow_submit_layout(enum view_type layout);
 void space_workflow_present(enum command_palette_native_action action, bool nested);
 void space_workflow_submit(enum command_palette_native_action action, uint64_t sid, char *text);
-void space_workflow_present_picker(const char *action_identifier, enum command_palette_picker_kind kind);
+void space_workflow_present_picker(const char *action_identifier, enum command_palette_picker_kind kind, uint32_t focused_wid);
 void command_palette_show_picker(struct space_workflow_picker_snapshot *snapshot);
 void space_workflow_destroy_picker_snapshot(struct space_workflow_picker_snapshot *snapshot);
 void space_workflow_handle_request(void *context);

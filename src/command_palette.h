@@ -23,6 +23,7 @@ enum command_palette_picker_kind
     COMMAND_PALETTE_PICKER_SPACE,
     COMMAND_PALETTE_PICKER_DISPLAY,
     COMMAND_PALETTE_PICKER_ENUM,
+    COMMAND_PALETTE_PICKER_SCRATCHPAD,
 };
 
 enum command_palette_native_action
@@ -31,6 +32,8 @@ enum command_palette_native_action
     COMMAND_PALETTE_NATIVE_SPACE_CHOOSE,
     COMMAND_PALETTE_NATIVE_SPACE_RELABEL,
     COMMAND_PALETTE_NATIVE_SPACE_LAYOUT_CYCLE,
+    COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD,
+    COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE,
 };
 
 struct command_palette_action
@@ -53,6 +56,7 @@ struct command_palette_execution_request
     const struct command_palette_action *action;
     char *argument;
     uint64_t sid;
+    uint32_t wid;
     bool from_ui;
 };
 

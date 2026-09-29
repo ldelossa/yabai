@@ -71,6 +71,7 @@ enum scratchpad_assignment
     SCRATCHPAD_ASSIGN_RULE,
     SCRATCHPAD_ASSIGN_AUTOMATIC,
     SCRATCHPAD_ASSIGN_DRAG,
+    SCRATCHPAD_ASSIGN_PALETTE,
 };
 
 enum scratchpad_transition
@@ -234,6 +235,7 @@ void window_manager_toggle_window_windowed_fullscreen(struct window *window);
 void window_manager_toggle_window_native_fullscreen(struct window *window);
 void window_manager_toggle_window_expose(struct window *window);
 void window_manager_toggle_window_pip(struct space_manager *sm, struct window *window);
+struct scratchpad *window_manager_find_scratchpad_by_label(struct window_manager *wm, char *label);
 struct scratchpad *window_manager_find_scratchpad_for_window(struct window_manager *wm, struct window *window);
 bool window_manager_toggle_scratchpad_window_by_label(struct window_manager *wm, char *label);
 bool window_manager_toggle_scratchpad_window(struct window_manager *wm, struct window *window, int forced_mode);

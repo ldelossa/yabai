@@ -63,6 +63,25 @@ TEST_FUNC(scratch_stack_tracks_membership_and_mru, {
     buf_free(scratchpad.members);
 })
 
+TEST_FUNC(scratch_stack_lookup_by_label, {
+    struct window_manager wm = {0};
+    struct scratchpad notes = { .label = "notes" };
+    struct scratchpad terminals = { .label = "terminals" };
+    buf_push(wm.scratchpads, notes);
+    buf_push(wm.scratchpads, terminals);
+
+    TEST_CHECK(window_manager_find_scratchpad_by_label(&wm, "notes") == &wm.scratchpads[0], true);
+    TEST_CHECK(window_manager_find_scratchpad_by_label(&wm, "terminals") == &wm.scratchpads[1], true);
+    TEST_CHECK(window_manager_find_scratchpad_by_label(&wm, "missing") == NULL, true);
+    TEST_CHECK(window_manager_find_scratchpad_by_label(&wm, NULL) == NULL, true);
+
+    struct window window = { .scratchpad = "terminals" };
+    TEST_CHECK(window_manager_find_scratchpad_for_window(&wm, &window) == &wm.scratchpads[1], true);
+    TEST_CHECK(window_manager_find_scratchpad_for_window(&wm, NULL) == NULL, true);
+
+    buf_free(wm.scratchpads);
+})
+
 TEST_FUNC(scratch_stack_removal_preserves_frame, {
     struct scratchpad scratchpad = {0};
     struct window first = {0};

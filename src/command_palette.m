@@ -4,6 +4,11 @@
 #define COMMAND_PALETTE_NATIVE_ACTION(identifier_, title_, category_, description_, native_action_) \
     { identifier_, title_, category_, NULL, NULL, NULL, description_, COMMAND_PALETTE_ARGUMENT_NONE, COMMAND_PALETTE_ACTION_NATIVE, native_action_, false }
 
+#define COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL "scratchpad"
+
+static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char *target_label, uint32_t focused_wid);
+static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, uint32_t focused_wid);
+
 const struct command_palette_action g_command_palette_actions[] =
 {
     COMMAND_PALETTE_ACTION("display.focus", "Focus Display", "Display", DOMAIN_DISPLAY, COMMAND_DISPLAY_FOCUS, "DISPLAY_SEL", "Focus a display by selector, index, or label.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
@@ -50,7 +55,9 @@ const struct command_palette_action g_command_palette_actions[] =
     COMMAND_PALETTE_ACTION("window.opacity", "Set Window Opacity", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_OPACITY, "0.0 .. 1.0", "Set the focused window opacity.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
     COMMAND_PALETTE_ACTION("window.raise", "Raise Window", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_RAISE, NULL, "Raise the focused window.", COMMAND_PALETTE_ARGUMENT_NONE, false),
     COMMAND_PALETTE_ACTION("window.lower", "Lower Window", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_LOWER, NULL, "Lower the focused window.", COMMAND_PALETTE_ARGUMENT_NONE, false),
-    COMMAND_PALETTE_ACTION("window.scratchpad", "Add Window to Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_SCRATCHPAD, "LABEL", "Add the focused window to a named scratch stack, leave empty to remove it, or enter recover to recover all stacks.", COMMAND_PALETTE_ARGUMENT_OPTIONAL, false),
+    COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-add", "Add Focused Window to Scratch Stack", "Window", "Add the previously focused window to a scratch stack, creating one when needed.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD),
+    COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-remove", "Remove Window from Scratch Stack", "Window", "Remove the focused window from its scratch stack and place it in the current space layout.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE),
+    COMMAND_PALETTE_ACTION("window.scratchpad", "Set Window Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_SCRATCHPAD, "LABEL", "Add the focused window to a named scratch stack, leave empty to remove it, or enter recover to recover all stacks.", COMMAND_PALETTE_ARGUMENT_OPTIONAL, false),
     COMMAND_PALETTE_ACTION("window.scratchpad-toggle", "Toggle Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_TOGGLE, "SCRATCH_LABEL", "Show or hide every window in a named scratch stack.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
     COMMAND_PALETTE_ACTION("window.stack-selector-anchor", "Set Stack Selector Anchor", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_STACK_SELECTOR_ANCHOR, "anchor | next | prev | default", "Set the focused stack selector anchor.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
 
@@ -163,10 +170,22 @@ char *command_palette_build_message(const struct command_palette_action *action,
     return message;
 }
 
-static void command_palette_execute_action(FILE *rsp, const struct command_palette_action *action, char *argument, bool from_ui, uint64_t sid)
+static void command_palette_execute_action(FILE *rsp, const struct command_palette_action *action, char *argument, bool from_ui, uint64_t sid, uint32_t wid)
 {
     if (action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
-        if (!from_ui && argument && *argument) {
+        if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD) {
+            if (!from_ui && argument && *argument) {
+                daemon_fail(rsp, "native action '%s' does not accept an argument.\n", action->identifier);
+            } else {
+                command_palette_execute_scratchpad_add(rsp, from_ui, argument, wid);
+            }
+        } else if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE) {
+            if (!from_ui && argument && *argument) {
+                daemon_fail(rsp, "native action '%s' does not accept an argument.\n", action->identifier);
+            } else {
+                command_palette_execute_scratchpad_remove(rsp, from_ui, wid);
+            }
+        } else if (!from_ui && argument && *argument) {
             daemon_fail(rsp, "native action '%s' does not accept an argument.\n", action->identifier);
         } else if (from_ui) {
             space_workflow_submit(action->native_action, sid, argument);
@@ -240,7 +259,7 @@ void command_palette_handle_message(FILE *rsp, char *message)
             daemon_fail(rsp, "action '%s' accepts at most one argument.\n", action->identifier);
             return;
         }
-        command_palette_execute_action(rsp, action, token_is_valid(argument) ? argument.text : NULL, false, 0);
+        command_palette_execute_action(rsp, action, token_is_valid(argument) ? argument.text : NULL, false, 0, 0);
     } else if (token_equals(command, COMMAND_ACTION_LIST)) {
         command_palette_list_actions(rsp);
     } else {
@@ -306,15 +325,119 @@ enum command_palette_content
     enum command_palette_content _content;
     bool _workflowNested;
     uint64_t _workflowFocusedSid;
+    uint32_t _paletteFocusedWid;
+    uint32_t _pickerFocusedWid;
     bool _executing;
     NSInteger _hoveredRow;
     NSPoint _lastMouseLocation;
 }
 + (instancetype)sharedController;
-- (void)show;
+- (void)showWithFocusedWindowId:(uint32_t)focusedWid;
 - (void)cancelPalette:(id)sender;
 - (void)showExecutionResult:(NSString *)output success:(bool)success;
 @end
+
+static void command_palette_finish_scratchpad_action(FILE *rsp, bool from_ui, bool success, const char *message)
+{
+    if (!from_ui) {
+        if (!success) {
+            daemon_fail(rsp, "%s\n", message);
+        } else if (message && *message) {
+            fprintf(rsp, "%s\n", message);
+        }
+        return;
+    }
+
+    char *result = strdup(message ?: "");
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *text = result && *result ? [NSString stringWithUTF8String:result] : @"";
+        [[command_palette_controller sharedController] showExecutionResult:text success:success];
+        free(result);
+    });
+}
+
+enum command_palette_scratchpad_resolution
+{
+    COMMAND_PALETTE_SCRATCHPAD_RESOLVE_NONE,
+    COMMAND_PALETTE_SCRATCHPAD_RESOLVE_SINGLE,
+    COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE,
+};
+
+static enum command_palette_scratchpad_resolution command_palette_resolve_scratchpad(struct window_manager *wm, struct scratchpad **out_scratchpad)
+{
+    int count = buf_len(wm->scratchpads);
+    if (out_scratchpad) *out_scratchpad = count == 1 ? &wm->scratchpads[0] : NULL;
+    if (count > 1) return COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE;
+    if (count == 1) return COMMAND_PALETTE_SCRATCHPAD_RESOLVE_SINGLE;
+    return COMMAND_PALETTE_SCRATCHPAD_RESOLVE_NONE;
+}
+
+static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char *target_label, uint32_t focused_wid)
+{
+    uint32_t window_id = focused_wid ? focused_wid : g_window_manager.focused_window_id;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window || !window_manager_scratchpad_can_assign_window(window)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "No eligible focused window exists.");
+        return;
+    }
+
+    if (window_manager_find_scratchpad_for_window(&g_window_manager, window)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, true, "Window already belongs to a scratch stack.");
+        return;
+    }
+
+    struct scratchpad *scratchpad = NULL;
+    if (target_label && *target_label) {
+        scratchpad = window_manager_find_scratchpad_by_label(&g_window_manager, target_label);
+        if (!scratchpad) {
+            command_palette_finish_scratchpad_action(rsp, from_ui, false, "The selected scratch stack no longer exists.");
+            return;
+        }
+    } else if (command_palette_resolve_scratchpad(&g_window_manager, &scratchpad) == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE) {
+        if (from_ui) {
+            space_workflow_present_picker("window.scratchpad-add", COMMAND_PALETTE_PICKER_SCRATCHPAD, window->id);
+        } else {
+            command_palette_finish_scratchpad_action(rsp, false, false, "Multiple scratch stacks exist; select one through the command palette.");
+        }
+        return;
+    }
+
+    if (scratchpad && scratchpad->node.window_count >= NODE_MAX_WINDOW_COUNT) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "The scratch stack has reached its window limit.");
+        return;
+    }
+
+    char *label = strdup(scratchpad ? scratchpad->label : COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL);
+    if (!label || !window_manager_assign_scratchpad_for_window(&g_window_manager, window, label, SCRATCHPAD_ASSIGN_PALETTE)) {
+        free(label);
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to add the focused window to the scratch stack.");
+        return;
+    }
+
+    command_palette_finish_scratchpad_action(rsp, from_ui, true, "");
+}
+
+static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, uint32_t focused_wid)
+{
+    uint32_t window_id = focused_wid ? focused_wid : g_window_manager.focused_window_id;
+    struct window *window = window_manager_find_window(&g_window_manager, window_id);
+    if (!window) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "No focused window exists.");
+        return;
+    }
+
+    if (!window_manager_find_scratchpad_for_window(&g_window_manager, window)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "The focused window is not in a scratch stack.");
+        return;
+    }
+
+    if (!window_manager_remove_scratchpad_for_window(&g_window_manager, window, true)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to remove the focused window from its scratch stack.");
+        return;
+    }
+
+    command_palette_finish_scratchpad_action(rsp, from_ui, true, "");
+}
 
 @implementation command_palette_panel
 @synthesize paletteController = _paletteController;
@@ -943,8 +1066,13 @@ enum command_palette_content
 {
     if (!action || _executing) return;
     if (action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
-        _executing = true;
-        space_workflow_present(action->native_action, true);
+        if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD ||
+            action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE) {
+            [self executeAction:action argument:nil];
+        } else {
+            _executing = true;
+            space_workflow_present(action->native_action, true);
+        }
         return;
     }
 
@@ -959,7 +1087,7 @@ enum command_palette_content
             [self showList];
         } else {
             _executing = true;
-            space_workflow_present_picker(action->identifier, picker_kind);
+            space_workflow_present_picker(action->identifier, picker_kind, 0);
         }
     } else if (action->argument_mode != COMMAND_PALETTE_ARGUMENT_NONE) {
         [self showInputForAction:action];
@@ -978,6 +1106,15 @@ enum command_palette_content
     request->action = action;
     request->argument = argument.length ? strdup(argument.UTF8String) : NULL;
     request->sid = _workflowFocusedSid;
+    uint32_t wid = 0;
+    if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD) {
+        wid = _content == COMMAND_PALETTE_CONTENT_PICKER && _pickerKind == COMMAND_PALETTE_PICKER_SCRATCHPAD
+            ? _pickerFocusedWid
+            : _paletteFocusedWid;
+    } else if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE) {
+        wid = _paletteFocusedWid;
+    }
+    request->wid = wid;
     request->from_ui = true;
     _executing = true;
     event_loop_post(&g_event_loop, COMMAND_PALETTE_ACTION, request, 0);
@@ -1034,6 +1171,7 @@ enum command_palette_content
     case COMMAND_PALETTE_PICKER_DISPLAY:
         return [NSString stringWithFormat:@"%d", (int)item.representedValue];
     case COMMAND_PALETTE_PICKER_ENUM:
+    case COMMAND_PALETTE_PICKER_SCRATCHPAD:
         if (item.representedValue < (uint64_t)_enumTokens.count) {
             return _enumTokens[(NSUInteger)item.representedValue];
         }
@@ -1121,6 +1259,10 @@ enum command_palette_content
         kind_word = @"VALUE";
         _searchField.placeholderString = @"Search values…";
         break;
+    case COMMAND_PALETTE_PICKER_SCRATCHPAD:
+        kind_word = @"SCRATCH STACK";
+        _searchField.placeholderString = @"Search scratch stacks…";
+        break;
     default:
         _searchField.placeholderString = @"Search…";
         break;
@@ -1142,6 +1284,7 @@ enum command_palette_content
     }
     _pickerAction = action;
     _pickerKind = snapshot->kind;
+    _pickerFocusedWid = snapshot->focused_wid;
 
     [_pickerItems removeAllObjects];
     [_enumTokens removeAllObjects];
@@ -1198,6 +1341,22 @@ enum command_palette_content
             item.representedValue = display->index;
             [_pickerItems addObject:item];
         }
+    } else if (snapshot->kind == COMMAND_PALETTE_PICKER_SCRATCHPAD) {
+        for (int i = 0; i < snapshot->scratchpad_count; ++i) {
+            struct space_workflow_scratchpad_item *scratchpad = &snapshot->scratchpads[i];
+            NSString *label = [NSString stringWithUTF8String:scratchpad->label];
+            NSString *detail = [NSString stringWithFormat:@"%d window%@",
+                                                           scratchpad->window_count,
+                                                           scratchpad->window_count == 1 ? @"" : @"s"];
+            [_enumTokens addObject:label];
+            native_palette_item *item = [native_palette_item itemWithTitle:label
+                                                                    detail:detail
+                                                                  category:@""
+                                                                symbolName:@"rectangle.stack"
+                                                                      kind:NATIVE_PALETTE_ITEM_ACTION];
+            item.representedValue = _enumTokens.count - 1;
+            [_pickerItems addObject:item];
+        }
     }
 
     [self preparePickerList];
@@ -1222,6 +1381,7 @@ enum command_palette_content
     _workflowNested = false;
     _pickerAction = NULL;
     _pickerKind = COMMAND_PALETTE_PICKER_NONE;
+    _pickerFocusedWid = 0;
     _backButton.hidden = YES;
     _searchField.frame = NSMakeRect(14, 348, 622, 36);
     _searchField.placeholderString = @"Search Yabai actions…";
@@ -1252,8 +1412,9 @@ enum command_palette_content
     }
 }
 
-- (void)show
+- (void)showWithFocusedWindowId:(uint32_t)focusedWid
 {
+    _paletteFocusedWid = focusedWid;
     [self buildPanel];
     _executing = false;
     [self showActionList];
@@ -1499,8 +1660,9 @@ doCommandBySelector:(SEL)commandSelector
 
 void command_palette_show(void)
 {
+    uint32_t focused_wid = g_window_manager.focused_window_id;
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[command_palette_controller sharedController] show];
+        [[command_palette_controller sharedController] showWithFocusedWindowId:focused_wid];
     });
 }
 
@@ -1522,7 +1684,7 @@ void command_palette_execute_request(void *context)
     if (!request) return;
 
     if (request->action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
-        command_palette_execute_action(NULL, request->action, request->argument, request->from_ui, request->sid);
+        command_palette_execute_action(NULL, request->action, request->argument, request->from_ui, request->sid, request->wid);
         free(request->argument);
         free(request);
         return;
@@ -1538,7 +1700,7 @@ void command_palette_execute_request(void *context)
         return;
     }
 
-    command_palette_execute_action(rsp, request->action, request->argument, request->from_ui, request->sid);
+    command_palette_execute_action(rsp, request->action, request->argument, request->from_ui, request->sid, request->wid);
     fflush(rsp);
     long response_length = ftell(rsp);
     rewind(rsp);

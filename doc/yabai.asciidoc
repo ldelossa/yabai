@@ -167,7 +167,15 @@ Native space workflows::
     'space.layout-cycle' cycles the focused space through stack, bsp, and float layouts.
 
 Window actions::
-    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.scratchpad-toggle', 'window.stack-selector-anchor'
+    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.scratchpad-add', 'window.scratchpad-remove', 'window.scratchpad-toggle', 'window.stack-selector-anchor'
+
+Native scratch workflow::
+    'window.scratchpad-add' adds the window focused before the palette opened to a scratch stack without prompting for a label. +
+    When no scratch stack exists, a default stack is created and the window is added to it. +
+    When one scratch stack exists, the window is added to it and the stack is presented if hidden. +
+    When several scratch stacks exist, a follow-up list shows each label and member count and the chosen stack is presented if hidden. +
+    'window.scratchpad-remove' removes the focused window from its scratch stack and places it in the current space layout. +
+    The named 'window.scratchpad' action remains available for explicitly creating and targeting labeled stacks.
 
 Runtime-setting actions::
     'config.mouse-follows-focus', 'config.focus-follows-mouse', 'config.stack-selector', 'config.stack-selector-anchor', 'config.skip-window-focus-animation', 'config.layout', 'config.split-type', 'config.split-ratio', 'config.top-padding', 'config.bottom-padding', 'config.left-padding', 'config.right-padding', 'config.window-gap', 'config.auto-balance'
