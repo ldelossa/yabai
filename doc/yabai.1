@@ -222,7 +222,7 @@ Native space workflows
 .sp
 Window actions
 .RS 4
-\fIwindow.focus\fP, \fIwindow.close\fP, \fIwindow.minimize\fP, \fIwindow.deminimize\fP, \fIwindow.display\fP, \fIwindow.space\fP, \fIwindow.swap\fP, \fIwindow.warp\fP, \fIwindow.stack\fP, \fIwindow.insert\fP, \fIwindow.grid\fP, \fIwindow.move\fP, \fIwindow.resize\fP, \fIwindow.ratio\fP, \fIwindow.toggle\fP, \fIwindow.sub\-layer\fP, \fIwindow.opacity\fP, \fIwindow.raise\fP, \fIwindow.lower\fP, \fIwindow.scratchpad\fP, \fIwindow.scratchpad\-add\fP, \fIwindow.scratchpad\-remove\fP, \fIwindow.scratchpad\-toggle\fP, \fIwindow.stack\-selector\-anchor\fP
+\fIwindow.focus\fP, \fIwindow.close\fP, \fIwindow.minimize\fP, \fIwindow.deminimize\fP, \fIwindow.display\fP, \fIwindow.space\fP, \fIwindow.swap\fP, \fIwindow.warp\fP, \fIwindow.stack\fP, \fIwindow.insert\fP, \fIwindow.grid\fP, \fIwindow.move\fP, \fIwindow.resize\fP, \fIwindow.ratio\fP, \fIwindow.toggle\fP, \fIwindow.sub\-layer\fP, \fIwindow.opacity\fP, \fIwindow.raise\fP, \fIwindow.lower\fP, \fIwindow.scratchpad\fP, \fIwindow.scratchpad\-add\fP, \fIwindow.scratchpad\-remove\fP, \fIwindow.scratchpad\-show\fP, \fIwindow.scratchpad\-hide\fP, \fIwindow.scratchpad\-toggle\fP, \fIwindow.stack\-selector\-anchor\fP
 .RE
 .sp
 Native scratch workflow
@@ -236,6 +236,8 @@ When one scratch stack exists, the window is added to it and the stack is presen
 When several scratch stacks exist, a follow\-up list shows each label and member count and the chosen stack is presented if hidden.
 .br
 \fIwindow.scratchpad\-remove\fP removes the focused window from its scratch stack and places it in the current space layout.
+.br
+\fIwindow.scratchpad\-show\fP and \fIwindow.scratchpad\-hide\fP present or hide a chosen scratch stack by label.
 .br
 The named \fIwindow.scratchpad\fP action remains available for explicitly creating and targeting labeled stacks.
 .RE
@@ -856,6 +858,8 @@ A newly focused top\-level window opened while a visible scratch stack owns focu
 Focusing or ordering in any member presents the complete stack and makes that member active.
 .br
 Use \fI\-\-toggle <LABEL>\fP to show or hide every member of the named stack.
+.br
+Use \fI\-\-scratchpad\-show <LABEL>\fP to present a named stack and \fI\-\-scratchpad\-hide <LABEL>\fP to hide it.
 .br
 The special value \fIrecover\fP can be used to forcefully bring all scratch stack windows to the front.
 .br

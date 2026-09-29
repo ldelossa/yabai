@@ -2764,6 +2764,20 @@ bool window_manager_toggle_scratchpad_window_by_label(struct window_manager *wm,
          : scratchpad_present(wm, scratchpad, NULL);
 }
 
+bool window_manager_show_scratchpad_by_label(struct window_manager *wm, char *label)
+{
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_by_label(wm, label);
+    if (!scratchpad) return false;
+    return scratchpad_present(wm, scratchpad, NULL);
+}
+
+bool window_manager_hide_scratchpad_by_label(struct window_manager *wm, char *label)
+{
+    struct scratchpad *scratchpad = window_manager_find_scratchpad_by_label(wm, label);
+    if (!scratchpad) return false;
+    return scratchpad_hide(wm, scratchpad);
+}
+
 bool window_manager_toggle_scratchpad_window(struct window_manager *wm, struct window *window, int forced_mode)
 {
     TIME_FUNCTION;

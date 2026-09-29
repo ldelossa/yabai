@@ -26,6 +26,20 @@ TEST_FUNC(command_palette_action_lookup, {
     TEST_CHECK(scratch_remove && scratch_remove->destructive == false, true);
     TEST_CHECK(command_palette_picker_kind_for_action(scratch_remove) == COMMAND_PALETTE_PICKER_NONE, true);
 
+    const struct command_palette_action *scratch_show = command_palette_find_action("window.scratchpad-show");
+    TEST_CHECK(scratch_show != NULL, true);
+    TEST_CHECK(scratch_show && scratch_show->kind == COMMAND_PALETTE_ACTION_NATIVE, true);
+    TEST_CHECK(scratch_show && scratch_show->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_SHOW, true);
+    TEST_CHECK(scratch_show && scratch_show->argument_mode == COMMAND_PALETTE_ARGUMENT_NONE, true);
+    TEST_CHECK(command_palette_picker_kind_for_action(scratch_show) == COMMAND_PALETTE_PICKER_NONE, true);
+
+    const struct command_palette_action *scratch_hide = command_palette_find_action("window.scratchpad-hide");
+    TEST_CHECK(scratch_hide != NULL, true);
+    TEST_CHECK(scratch_hide && scratch_hide->kind == COMMAND_PALETTE_ACTION_NATIVE, true);
+    TEST_CHECK(scratch_hide && scratch_hide->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_HIDE, true);
+    TEST_CHECK(scratch_hide && scratch_hide->argument_mode == COMMAND_PALETTE_ARGUMENT_NONE, true);
+    TEST_CHECK(command_palette_picker_kind_for_action(scratch_hide) == COMMAND_PALETTE_PICKER_NONE, true);
+
     const struct command_palette_action *scratch_toggle = command_palette_find_action("window.scratchpad-toggle");
     TEST_CHECK(scratch_toggle != NULL, true);
     TEST_CHECK(scratch_toggle && string_equals(scratch_toggle->command, "--toggle"), true);

@@ -59,7 +59,7 @@ yabai -m action --run space.layout-cycle
 
 The native space chooser searches workspace names, focuses existing workspaces, and creates a labeled workspace when no name matches.
 
-The `window.scratchpad-add` action adds the previously focused window to a scratch stack. When no stack exists, it prompts for a label (defaulting to `scratchpad`) and makes the window the first member of the new stack; with one stack it adds directly and presents a hidden stack; with several stacks it shows a picker. When several named stacks exist, a follow-up list shows each label and member count. The `window.scratchpad-remove` action removes the focused window from its scratch stack and places it back in the current space layout.
+The `window.scratchpad-add` action adds the previously focused window to a scratch stack: with no stack it prompts for a label (defaulting to `scratchpad`), with one stack it adds directly, and with several stacks it shows a picker. The `window.scratchpad-remove` action removes the focused window from its scratch stack and places it back in the current space layout. The `window.scratchpad-show` and `window.scratchpad-hide` actions present or hide a chosen scratch stack by label.
 
 ### Scratch stacks and native stack selector
 

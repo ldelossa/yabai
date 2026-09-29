@@ -167,7 +167,7 @@ Native space workflows::
     'space.layout-cycle' cycles the focused space through stack, bsp, and float layouts.
 
 Window actions::
-    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.scratchpad-add', 'window.scratchpad-remove', 'window.scratchpad-toggle', 'window.stack-selector-anchor'
+    'window.focus', 'window.close', 'window.minimize', 'window.deminimize', 'window.display', 'window.space', 'window.swap', 'window.warp', 'window.stack', 'window.insert', 'window.grid', 'window.move', 'window.resize', 'window.ratio', 'window.toggle', 'window.sub-layer', 'window.opacity', 'window.raise', 'window.lower', 'window.scratchpad', 'window.scratchpad-add', 'window.scratchpad-remove', 'window.scratchpad-show', 'window.scratchpad-hide', 'window.scratchpad-toggle', 'window.stack-selector-anchor'
 
 Native scratch workflow::
     'window.scratchpad-add' adds the window focused before the palette opened to a scratch stack. +
@@ -175,6 +175,7 @@ Native scratch workflow::
     When one scratch stack exists, the window is added to it and the stack is presented if hidden. +
     When several scratch stacks exist, a follow-up list shows each label and member count and the chosen stack is presented if hidden. +
     'window.scratchpad-remove' removes the focused window from its scratch stack and places it in the current space layout. +
+    'window.scratchpad-show' and 'window.scratchpad-hide' present or hide a chosen scratch stack by label. +
     The named 'window.scratchpad' action remains available for explicitly creating and targeting labeled stacks.
 
 Runtime-setting actions::
@@ -564,6 +565,7 @@ COMMAND
     A newly focused top-level window opened while a visible scratch stack owns focus is automatically added to that stack unless an explicit rule matched it. +
     Focusing or ordering in any member presents the complete stack and makes that member active. +
     Use '--toggle <LABEL>' to show or hide every member of the named stack. +
+    Use '--scratchpad-show <LABEL>' to present a named stack and '--scratchpad-hide <LABEL>' to hide it. +
     The special value 'recover' can be used to forcefully bring all scratch stack windows to the front. +
     This can be useful if windows become inaccessible due to a restart or crash. +
     System Integrity Protection must be partially disabled.

@@ -8,6 +8,8 @@
 
 static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char *target_label, uint32_t focused_wid);
 static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, uint32_t focused_wid);
+static void command_palette_execute_scratchpad_show(FILE *rsp, bool from_ui, char *target_label);
+static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, char *target_label);
 void command_palette_show_scratchpad_label_input(void);
 
 const struct command_palette_action g_command_palette_actions[] =
@@ -58,6 +60,8 @@ const struct command_palette_action g_command_palette_actions[] =
     COMMAND_PALETTE_ACTION("window.lower", "Lower Window", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_LOWER, NULL, "Lower the focused window.", COMMAND_PALETTE_ARGUMENT_NONE, false),
     COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-add", "Add Focused Window to Scratch Stack", "Window", "Add the previously focused window to a scratch stack, creating one when needed.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD),
     COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-remove", "Remove Window from Scratch Stack", "Window", "Remove the focused window from its scratch stack and place it in the current space layout.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE),
+    COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-show", "Show Scratch Stack", "Window", "Present every window in a chosen scratch stack.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_SHOW),
+    COMMAND_PALETTE_NATIVE_ACTION("window.scratchpad-hide", "Hide Scratch Stack", "Window", "Hide every window in a chosen scratch stack.", COMMAND_PALETTE_NATIVE_SCRATCHPAD_HIDE),
     COMMAND_PALETTE_ACTION("window.scratchpad", "Set Window Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_SCRATCHPAD, "LABEL", "Add the focused window to a named scratch stack, leave empty to remove it, or enter recover to recover all stacks.", COMMAND_PALETTE_ARGUMENT_OPTIONAL, false),
     COMMAND_PALETTE_ACTION("window.scratchpad-toggle", "Toggle Scratch Stack", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_TOGGLE, "SCRATCH_LABEL", "Show or hide every window in a named scratch stack.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
     COMMAND_PALETTE_ACTION("window.stack-selector-anchor", "Set Stack Selector Anchor", "Window", DOMAIN_WINDOW, COMMAND_WINDOW_STACK_SELECTOR_ANCHOR, "anchor | next | prev | default", "Set the focused stack selector anchor.", COMMAND_PALETTE_ARGUMENT_REQUIRED, false),
@@ -186,6 +190,10 @@ static void command_palette_execute_action(FILE *rsp, const struct command_palet
             } else {
                 command_palette_execute_scratchpad_remove(rsp, from_ui, wid);
             }
+        } else if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_SHOW) {
+            command_palette_execute_scratchpad_show(rsp, from_ui, argument);
+        } else if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_HIDE) {
+            command_palette_execute_scratchpad_hide(rsp, from_ui, argument);
         } else if (!from_ui && argument && *argument) {
             daemon_fail(rsp, "native action '%s' does not accept an argument.\n", action->identifier);
         } else if (from_ui) {
@@ -439,6 +447,44 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
 
     if (!window_manager_remove_scratchpad_for_window(&g_window_manager, window, true)) {
         command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to remove the focused window from its scratch stack.");
+        return;
+    }
+
+    command_palette_finish_scratchpad_action(rsp, from_ui, true, "");
+}
+
+static void command_palette_execute_scratchpad_show(FILE *rsp, bool from_ui, char *target_label)
+{
+    if (!target_label || !*target_label) {
+        if (from_ui) {
+            space_workflow_present_picker("window.scratchpad-show", COMMAND_PALETTE_PICKER_SCRATCHPAD, 0);
+        } else {
+            command_palette_finish_scratchpad_action(rsp, false, false, "Show Scratch Stack requires a label.");
+        }
+        return;
+    }
+
+    if (!window_manager_show_scratchpad_by_label(&g_window_manager, target_label)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to show the scratch stack.");
+        return;
+    }
+
+    command_palette_finish_scratchpad_action(rsp, from_ui, true, "");
+}
+
+static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, char *target_label)
+{
+    if (!target_label || !*target_label) {
+        if (from_ui) {
+            space_workflow_present_picker("window.scratchpad-hide", COMMAND_PALETTE_PICKER_SCRATCHPAD, 0);
+        } else {
+            command_palette_finish_scratchpad_action(rsp, false, false, "Hide Scratch Stack requires a label.");
+        }
+        return;
+    }
+
+    if (!window_manager_hide_scratchpad_by_label(&g_window_manager, target_label)) {
+        command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to hide the scratch stack.");
         return;
     }
 
@@ -1098,7 +1144,9 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
     if (!action || _executing) return;
     if (action->kind == COMMAND_PALETTE_ACTION_NATIVE) {
         if (action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_ADD ||
-            action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE) {
+            action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_REMOVE ||
+            action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_SHOW ||
+            action->native_action == COMMAND_PALETTE_NATIVE_SCRATCHPAD_HIDE) {
             [self executeAction:action argument:nil];
         } else {
             _executing = true;

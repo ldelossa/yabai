@@ -155,6 +155,8 @@ extern bool g_verbose;
 #define COMMAND_WINDOW_LOWER      "--lower"
 #define COMMAND_WINDOW_TOGGLE     "--toggle"
 #define COMMAND_WINDOW_SCRATCHPAD           "--scratchpad"
+#define COMMAND_WINDOW_SCRATCHPAD_SHOW       "--scratchpad-show"
+#define COMMAND_WINDOW_SCRATCHPAD_HIDE       "--scratchpad-hide"
 #define COMMAND_WINDOW_STACK_SELECTOR_ANCHOR "--stack-selector-anchor"
 
 #define ARGUMENT_WINDOW_SEL_LARGEST     "largest"
@@ -2157,7 +2159,9 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
             !token_equals(command, COMMAND_WINDOW_CLOSE) &&
             !token_equals(command, COMMAND_WINDOW_MINIMIZE) &&
             !token_equals(command, COMMAND_WINDOW_DEMINIMIZE) &&
-            !token_equals(command, COMMAND_WINDOW_TOGGLE)) {
+            !token_equals(command, COMMAND_WINDOW_TOGGLE) &&
+            !token_equals(command, COMMAND_WINDOW_SCRATCHPAD_SHOW) &&
+            !token_equals(command, COMMAND_WINDOW_SCRATCHPAD_HIDE)) {
             daemon_fail(rsp, "could not locate the window to act on!\n");
             return;
         }
@@ -2538,6 +2542,30 @@ static void handle_domain_window(FILE *rsp, struct token domain, char *message)
                     if (!window_manager_remove_scratchpad_for_window(&g_window_manager, acting_window, true)) {
                         daemon_fail(rsp, "the selected window was not assigned to a scratchpad!\n");
                     }
+                }
+            }
+        } else if (token_equals(command, COMMAND_WINDOW_SCRATCHPAD_SHOW)) {
+            char *label = NULL;
+            struct token token = get_token(&message);
+            if (parse_label(rsp, token, LABEL_WINDOW, &label)) {
+                if (label) {
+                    bool shown = window_manager_show_scratchpad_by_label(&g_window_manager, label);
+                    free(label);
+                    if (!shown) daemon_fail(rsp, "could not show scratch stack '%.*s'!\n", token.length, token.text);
+                } else {
+                    daemon_fail(rsp, "command '%s' requires a scratch label.\n", COMMAND_WINDOW_SCRATCHPAD_SHOW);
+                }
+            }
+        } else if (token_equals(command, COMMAND_WINDOW_SCRATCHPAD_HIDE)) {
+            char *label = NULL;
+            struct token token = get_token(&message);
+            if (parse_label(rsp, token, LABEL_WINDOW, &label)) {
+                if (label) {
+                    bool hidden = window_manager_hide_scratchpad_by_label(&g_window_manager, label);
+                    free(label);
+                    if (!hidden) daemon_fail(rsp, "could not hide scratch stack '%.*s'!\n", token.length, token.text);
+                } else {
+                    daemon_fail(rsp, "command '%s' requires a scratch label.\n", COMMAND_WINDOW_SCRATCHPAD_HIDE);
                 }
             }
         } else {
