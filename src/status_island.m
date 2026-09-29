@@ -106,6 +106,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     id _target;
     bool _mirrored;
     bool _marquee_active;
+    bool _hovered;
 }
 @property(assign) SEL action;
 @property(assign) id target;
@@ -273,7 +274,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     }
 
     NSTrackingArea *area = [[NSTrackingArea alloc] initWithRect:self.bounds
-                                                        options:NSTrackingActiveAlways | NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect
+                                                        options:NSTrackingActiveAlways | NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingInVisibleRect
                                                           owner:self
                                                        userInfo:nil];
     [self addTrackingArea:area];
@@ -282,25 +283,31 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
 - (void)mouseEntered:(NSEvent *)event
 {
+    _hovered = true;
     [self startMarquee];
     [self setNeedsDisplay:YES];
 }
 
 - (void)mouseExited:(NSEvent *)event
 {
+    _hovered = false;
     [self stopMarquee];
     [self setNeedsDisplay:YES];
+}
+
+- (void)mouseMoved:(NSEvent *)event
+{
+    if (!_hovered) {
+        _hovered = true;
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect
 {
     [super drawRect:dirtyRect];
 
-    bool hovered = false;
-    NSPoint point = [self convertPoint:self.window.mouseLocationOutsideOfEventStream fromView:nil];
-    if (NSPointInRect(point, self.bounds)) hovered = true;
-
-    if (hovered) {
+    if (_hovered) {
         [[NSColor colorWithWhite:1.0f alpha:0.08f] setFill];
         NSRectFill(self.bounds);
     }
@@ -392,7 +399,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
         [self removeTrackingArea:area];
     }
     NSTrackingArea *area = [[NSTrackingArea alloc] initWithRect:self.bounds
-                                                        options:NSTrackingActiveAlways | NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect
+                                                        options:NSTrackingActiveAlways | NSTrackingMouseEnteredAndExited | NSTrackingMouseMoved | NSTrackingInVisibleRect
                                                           owner:self
                                                        userInfo:nil];
     [self addTrackingArea:area];
@@ -409,6 +416,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     _hovered = false;
     [self setNeedsDisplay:YES];
+}
+
+- (void)mouseMoved:(NSEvent *)event
+{
+    if (!_hovered) {
+        _hovered = true;
+        [self setNeedsDisplay:YES];
+    }
 }
 
 - (void)drawRect:(NSRect)dirtyRect
@@ -699,7 +714,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     if (_event_monitor) return;
     _event_monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
-                                                           handler:^(NSEvent *event) {
+                                                           handler:^(NSEvent *__unused event) {
         NSPoint location = [NSEvent mouseLocation];
         bool inMenu = (_workspace_menu && _workspace_menu.visible && NSPointInRect(location, _workspace_menu.frame)) ||
                       (_layout_menu && _layout_menu.visible && NSPointInRect(location, _layout_menu.frame));
@@ -727,6 +742,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     panel.ignoresMouseEvents = NO;
     panel.animationBehavior = NSWindowAnimationBehaviorNone;
     panel.level = NSStatusWindowLevel;
+    panel.acceptsMouseMovedEvents = YES;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
 
     NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)];
