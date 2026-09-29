@@ -8,6 +8,7 @@
 
 static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char *target_label, uint32_t focused_wid);
 static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, uint32_t focused_wid);
+void command_palette_show_scratchpad_label_input(void);
 
 const struct command_palette_action g_command_palette_actions[] =
 {
@@ -327,6 +328,7 @@ enum command_palette_content
     uint64_t _workflowFocusedSid;
     uint32_t _paletteFocusedWid;
     uint32_t _pickerFocusedWid;
+    bool _scratchpadCreatePrompt;
     bool _executing;
     NSInteger _hoveredRow;
     NSPoint _lastMouseLocation;
@@ -389,17 +391,20 @@ static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char
     struct scratchpad *scratchpad = NULL;
     if (target_label && *target_label) {
         scratchpad = window_manager_find_scratchpad_by_label(&g_window_manager, target_label);
-        if (!scratchpad) {
-            command_palette_finish_scratchpad_action(rsp, from_ui, false, "The selected scratch stack no longer exists.");
+    } else {
+        enum command_palette_scratchpad_resolution resolution = command_palette_resolve_scratchpad(&g_window_manager, &scratchpad);
+        if (resolution == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE) {
+            if (from_ui) {
+                space_workflow_present_picker("window.scratchpad-add", COMMAND_PALETTE_PICKER_SCRATCHPAD, window->id);
+            } else {
+                command_palette_finish_scratchpad_action(rsp, false, false, "Multiple scratch stacks exist; select one through the command palette.");
+            }
             return;
         }
-    } else if (command_palette_resolve_scratchpad(&g_window_manager, &scratchpad) == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_MULTIPLE) {
-        if (from_ui) {
-            space_workflow_present_picker("window.scratchpad-add", COMMAND_PALETTE_PICKER_SCRATCHPAD, window->id);
-        } else {
-            command_palette_finish_scratchpad_action(rsp, false, false, "Multiple scratch stacks exist; select one through the command palette.");
+        if (resolution == COMMAND_PALETTE_SCRATCHPAD_RESOLVE_NONE && from_ui) {
+            command_palette_show_scratchpad_label_input();
+            return;
         }
-        return;
     }
 
     if (scratchpad && scratchpad->node.window_count >= NODE_MAX_WINDOW_COUNT) {
@@ -407,7 +412,8 @@ static void command_palette_execute_scratchpad_add(FILE *rsp, bool from_ui, char
         return;
     }
 
-    char *label = strdup(scratchpad ? scratchpad->label : COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL);
+    char *label = strdup((target_label && *target_label) ? target_label
+                        : (scratchpad ? scratchpad->label : COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL));
     if (!label || !window_manager_assign_scratchpad_for_window(&g_window_manager, window, label, SCRATCHPAD_ASSIGN_PALETTE)) {
         free(label);
         command_palette_finish_scratchpad_action(rsp, from_ui, false, "Unable to add the focused window to the scratch stack.");
@@ -484,6 +490,7 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
         _pickerKind = COMMAND_PALETTE_PICKER_NONE;
         _state = COMMAND_PALETTE_VIEW_LIST;
         _content = COMMAND_PALETTE_CONTENT_ACTIONS;
+        _scratchpadCreatePrompt = false;
         _hoveredRow = -1;
     }
     return self;
@@ -1013,6 +1020,7 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
 {
     _state = COMMAND_PALETTE_VIEW_LIST;
     _pendingAction = NULL;
+    _scratchpadCreatePrompt = false;
     [_pendingArgument release];
     _pendingArgument = nil;
     _hoveredRow = -1;
@@ -1039,6 +1047,29 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
     _argumentField.stringValue = @"";
     _argumentField.placeholderString = action->argument_mode == COMMAND_PALETTE_ARGUMENT_OPTIONAL ? @"Optional argument…" : @"Enter argument…";
     _runButton.title = @"Run";
+    [self rebuildDetailFooter];
+    [self resizePanelForState];
+    [_panel makeFirstResponder:_argumentField];
+}
+
+- (void)showScratchpadLabelInput
+{
+    const struct command_palette_action *action = command_palette_find_action("window.scratchpad-add");
+    if (!action) return;
+
+    _state = COMMAND_PALETTE_VIEW_INPUT;
+    _pendingAction = action;
+    _scratchpadCreatePrompt = true;
+    _listView.hidden = YES;
+    _detailView.hidden = NO;
+    _breadcrumbField.stringValue = @"Yabai Actions  ›  New Scratch Stack";
+    _detailTitleField.stringValue = @"New Scratch Stack";
+    _detailIdField.stringValue = @"window.scratchpad-add";
+    _detailDescriptionField.stringValue = @"No scratch stack exists yet. Enter a label for the new stack.";
+    _argumentLabelField.stringValue = @"Label";
+    _argumentField.stringValue = @COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL;
+    _argumentField.placeholderString = @"Scratch stack label…";
+    _runButton.title = @"Create & Add";
     [self rebuildDetailFooter];
     [self resizePanelForState];
     [_panel makeFirstResponder:_argumentField];
@@ -1126,12 +1157,13 @@ static void command_palette_execute_scratchpad_remove(FILE *rsp, bool from_ui, u
 
     if (_state == COMMAND_PALETTE_VIEW_INPUT) {
         NSString *argument = _argumentField.stringValue;
-        if (_pendingAction->argument_mode == COMMAND_PALETTE_ARGUMENT_REQUIRED && !argument.length) {
-            _argumentLabelField.stringValue = [NSString stringWithFormat:@"Argument required  ·  %s", _pendingAction->syntax ?: "text"];
+        if ((_scratchpadCreatePrompt || _pendingAction->argument_mode == COMMAND_PALETTE_ARGUMENT_REQUIRED) && !argument.length) {
+            _argumentLabelField.stringValue = _scratchpadCreatePrompt ? @"Label required" : [NSString stringWithFormat:@"Argument required  ·  %s", _pendingAction->syntax ?: "text"];
             _argumentLabelField.textColor = NSColor.systemRedColor;
             NSBeep();
             return;
         }
+        _scratchpadCreatePrompt = false;
         _argumentLabelField.textColor = NSColor.secondaryLabelColor;
         if (_pendingAction->destructive) {
             [self showConfirmationForAction:_pendingAction argument:argument];
@@ -1663,6 +1695,13 @@ void command_palette_show(void)
     uint32_t focused_wid = g_window_manager.focused_window_id;
     dispatch_async(dispatch_get_main_queue(), ^{
         [[command_palette_controller sharedController] showWithFocusedWindowId:focused_wid];
+    });
+}
+
+void command_palette_show_scratchpad_label_input(void)
+{
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[command_palette_controller sharedController] showScratchpadLabelInput];
     });
 }
 

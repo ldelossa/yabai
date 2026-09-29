@@ -69,6 +69,7 @@ int command_palette_action_score(const struct command_palette_action *action, ch
 char *command_palette_build_message(const struct command_palette_action *action, char *argument, int *length);
 void command_palette_handle_message(FILE *rsp, char *message);
 void command_palette_show(void);
+void command_palette_show_scratchpad_label_input(void);
 void command_palette_execute_request(void *context);
 void command_palette_show_space_workflow(struct space_workflow_snapshot *snapshot);
 void command_palette_show_space_result(char *message, bool success, bool close_panel);

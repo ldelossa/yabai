@@ -227,9 +227,9 @@ Window actions
 .sp
 Native scratch workflow
 .RS 4
-\fIwindow.scratchpad\-add\fP adds the window focused before the palette opened to a scratch stack without prompting for a label.
+\fIwindow.scratchpad\-add\fP adds the window focused before the palette opened to a scratch stack.
 .br
-When no scratch stack exists, a default stack is created and the window is added to it.
+When no scratch stack exists, a prompt asks for a label, defaulting to \fIscratchpad\fP, and the window becomes the first member of the new stack.
 .br
 When one scratch stack exists, the window is added to it and the stack is presented if hidden.
 .br
