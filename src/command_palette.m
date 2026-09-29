@@ -1103,6 +1103,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     const struct command_palette_action *action = command_palette_find_action("window.scratchpad-add");
     if (!action) return;
 
+    _executing = false;
     _state = COMMAND_PALETTE_VIEW_INPUT;
     _pendingAction = action;
     _scratchpadCreatePrompt = true;
