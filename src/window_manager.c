@@ -2719,17 +2719,28 @@ static bool scratchpad_hide(struct window_manager *wm, struct scratchpad *scratc
     if (!scratchpad || !scratchpad->node.window_count) return false;
 
     uint64_t sid = space_manager_active_space();
-    struct window *active_window = window_manager_find_window(wm, scratchpad->node.window_order[0]);
-    struct window *next = active_window
-                        ? window_manager_find_window_on_space_by_rank_filtering_window(wm, sid, 1, active_window->id)
-                        : NULL;
+
+    // Restore focus to the nearest non-scratchpad window behind the entire stack.
+    // Skipping only the active member is insufficient with multi-window stacks:
+    // its siblings sit directly behind it and would otherwise fall through to Finder.
+    struct window *next = NULL;
+    int window_count = 0;
+    uint32_t *window_list = space_window_list(sid, &window_count, false);
+    if (window_list) {
+        for (int i = 0; i < window_count; ++i) {
+            struct window *window = window_manager_find_window(wm, window_list[i]);
+            if (!window || window->scratchpad) continue;
+            next = window;
+            break;
+        }
+    }
 
     scratchpad->visible = false;
     scratchpad->transition = SCRATCHPAD_TRANSITION_HIDING;
     scratchpad_clear_active(wm);
     stack_selector_destroy_node(&scratchpad->node);
 
-    if (next && !next->scratchpad) {
+    if (next) {
         window_manager_focus_window_with_raise(&next->application->psn, next->id, next->ref);
     } else {
         _SLPSSetFrontProcessWithOptions(&g_process_manager.finder_psn, 0, kCPSNoWindows);
