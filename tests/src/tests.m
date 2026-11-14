@@ -15,6 +15,8 @@ typedef TEST_SIG(function);
 #include "command_palette.c"
 #include "scratch_stack.c"
 #include "stack_order.c"
+#include "sa_protocol.c"
+#include "osax_compat.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -30,7 +32,15 @@ typedef TEST_SIG(function);
     TEST_ENTRY(scratch_stack_tracks_membership_and_mru)        \
     TEST_ENTRY(scratch_stack_lookup_by_label)                  \
     TEST_ENTRY(scratch_stack_removal_preserves_frame)          \
-    TEST_ENTRY(window_node_reorder_preserves_order)
+    TEST_ENTRY(window_node_reorder_preserves_order)             \
+    TEST_ENTRY(sa_handshake_framing)                            \
+    TEST_ENTRY(sa_capability_preflight)                         \
+    TEST_ENTRY(sa_handshake_socket_errors)                      \
+    TEST_ENTRY(space_workflow_create_lifecycle)                 \
+    TEST_ENTRY(osax_pattern_bounds_and_uniqueness)              \
+    TEST_ENTRY(osax_profile_and_pointer_decode)                 \
+    TEST_ENTRY(osax_space_selector_and_storage_guards)          \
+    TEST_ENTRY(osax_focus_list_ownership)
 
 static struct {
     char *name;

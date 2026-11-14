@@ -1831,7 +1831,7 @@ static void handle_domain_display(FILE *rsp, struct token domain, char *message)
             } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                 daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
             } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+                daemon_fail(rsp, "cannot focus space: %s\n", scripting_addition_error_message());
             }
         }
     } else if (token_equals(command, COMMAND_DISPLAY_LABEL)) {
@@ -1882,7 +1882,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                     daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                    daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+                    daemon_fail(rsp, "cannot focus space: %s\n", scripting_addition_error_message());
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_SWITCH)) {
@@ -1896,7 +1896,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                     daemon_fail(rsp, "cannot focus space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                    daemon_fail(rsp, "cannot focus space due to an error with the scripting-addition.\n");
+                    daemon_fail(rsp, "cannot focus space: %s\n", scripting_addition_error_message());
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_MOVE)) {
@@ -1912,7 +1912,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                     daemon_fail(rsp, "cannot move space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                    daemon_fail(rsp, "cannot move space due to an error with the scripting-addition.\n");
+                    daemon_fail(rsp, "cannot move space: %s\n", scripting_addition_error_message());
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_SWAP)) {
@@ -1926,7 +1926,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                     daemon_fail(rsp, "cannot swap space because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                    daemon_fail(rsp, "cannot swap space due to an error with the scripting-addition.\n");
+                    daemon_fail(rsp, "cannot swap space: %s\n", scripting_addition_error_message());
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_DISPLAY)) {
@@ -1946,7 +1946,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
                 } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                     daemon_fail(rsp, "cannot send space to display because mission-control is active.\n");
                 } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                    daemon_fail(rsp, "cannot send space to display due to an error with the scripting-addition.\n");
+                    daemon_fail(rsp, "cannot send space to display: %s\n", scripting_addition_error_message());
                 }
             }
         } else if (token_equals(command, COMMAND_SPACE_CREATE)) {
@@ -1968,7 +1968,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
             } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                 daemon_fail(rsp, "cannot create space because mission-control is active.\n");
             } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                daemon_fail(rsp, "cannot create space due to an error with the scripting-addition.\n");
+                daemon_fail(rsp, "cannot create space: %s\n", scripting_addition_error_message());
             }
         } else if (token_equals(command, COMMAND_SPACE_DESTROY)) {
             struct selector selector = parse_space_selector(rsp, &message, acting_sid, true);
@@ -1993,7 +1993,7 @@ static void handle_domain_space(FILE *rsp, struct token domain, char *message)
             } else if (result == SPACE_OP_ERROR_IN_MISSION_CONTROL) {
                 daemon_fail(rsp, "cannot destroy space because mission-control is active.\n");
             } else if (result == SPACE_OP_ERROR_SCRIPTING_ADDITION) {
-                daemon_fail(rsp, "cannot destroy space due to an error with the scripting-addition.\n");
+                daemon_fail(rsp, "cannot destroy space: %s\n", scripting_addition_error_message());
             }
         } else if (token_equals(command, COMMAND_SPACE_EQUALIZE)) {
             struct token value = get_token(&message);

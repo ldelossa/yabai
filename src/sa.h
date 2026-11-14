@@ -6,6 +6,7 @@ extern unsigned int __src_osax_payload_len;
 extern unsigned char __src_osax_loader[];
 extern unsigned int __src_osax_loader_len;
 
+const char *scripting_addition_error_message(void);
 int scripting_addition_load(void);
 int scripting_addition_uninstall(void);
 

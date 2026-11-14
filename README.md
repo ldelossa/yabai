@@ -252,6 +252,11 @@ alt - o : yabai -m action --run space.layout-cycle
 | Scripting addition | Uses upstream `sudo yabai --load-sa` workflow with a macOS 27-compatible payload. |
 | Operating system | macOS 27 and later only. |
 
+Scripting-addition compatibility is specific to the Dock build, not just the macOS major version.
+The macOS 27.3 repair is validated on build `26C5035r` with the `arm64e` Dock slice and provides workspace creation, focus, and destruction with payload `2.1.41`.
+Workspace movement, the privileged window-focus entry point, and animation bypass remain disabled in this profile.
+Other macOS 27.2+ Dock builds and the `arm64e.x1` slice fail closed until separately validated; the existing macOS 27.0/27.1 paths are retained.
+
 ## Upstream documentation
 
 This fork intentionally does not duplicate the complete yabai manual.

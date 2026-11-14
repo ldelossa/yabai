@@ -1,4 +1,27 @@
 #include "sa.h"
+#include "sa_protocol.h"
+#include <errno.h>
+#include <time.h>
+
+// SA requests run on the event loop, but keep diagnostics local to each caller.
+enum sa_error { SA_ERROR_NONE, SA_ERROR_CONNECTION, SA_ERROR_HANDSHAKE, SA_ERROR_VERSION, SA_ERROR_CAPABILITY, SA_ERROR_TRANSPORT };
+static _Thread_local enum sa_error g_sa_error;
+static _Thread_local uint32_t g_sa_missing_attributes;
+
+const char *scripting_addition_error_message(void)
+{
+    static _Thread_local char message[192];
+    switch (g_sa_error) {
+    case SA_ERROR_CONNECTION: return "Cannot connect to the scripting addition; load the matching payload.";
+    case SA_ERROR_HANDSHAKE: return "The scripting addition returned an invalid or incomplete capability response.";
+    case SA_ERROR_VERSION: return "The loaded scripting addition version does not match this yabai binary; reload the matching payload.";
+    case SA_ERROR_CAPABILITY:
+        snprintf(message, sizeof(message), "The scripting addition lacks required capabilities (missing 0x%02X); this macOS/Dock build does not support this operation.", g_sa_missing_attributes);
+        return message;
+    case SA_ERROR_TRANSPORT: return "Communication with the scripting addition failed.";
+    default: return "The scripting addition could not complete the operation.";
+    }
+}
 
 extern int csr_get_active_config(uint32_t *config);
 #define CSR_ALLOW_UNRESTRICTED_FS 0x02
@@ -236,35 +259,117 @@ cleanup:
     return 2;
 }
 
+static uint64_t scripting_addition_now_ns(void)
+{
+    struct timespec now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    return (uint64_t)now.tv_sec * 1000000000ULL + now.tv_nsec;
+}
+
+static bool scripting_addition_wait(int fd, short events, uint64_t deadline)
+{
+    for (;;) {
+        uint64_t now = scripting_addition_now_ns();
+        if (now >= deadline) return false;
+        struct pollfd pfd = { .fd = fd, .events = events };
+        int milliseconds = (int)((deadline - now + 999999ULL) / 1000000ULL);
+        int result = poll(&pfd, 1, milliseconds);
+        if (result < 0 && errno == EINTR) continue;
+        return result > 0 && (pfd.revents & (events | POLLHUP | POLLERR));
+    }
+}
+
+static bool scripting_addition_read_handshake(int fd, uint64_t deadline, struct sa_handshake *handshake)
+{
+    char bytes[SA_HANDSHAKE_VERSION_MAX + sizeof(uint32_t)];
+    size_t length = 0;
+    while (length < sizeof(bytes)) {
+        if (!scripting_addition_wait(fd, POLLIN, deadline)) {
+            if (length) g_sa_error = SA_ERROR_HANDSHAKE;
+            return false;
+        }
+        ssize_t count = recv(fd, bytes + length, sizeof(bytes) - length, MSG_DONTWAIT);
+        if (count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+        if (count <= 0) {
+            g_sa_error = SA_ERROR_HANDSHAKE;
+            return false;
+        }
+        length += count;
+        enum sa_handshake_result result = sa_decode_handshake(bytes, length, handshake);
+        if (result == SA_HANDSHAKE_COMPLETE) return true;
+        if (result == SA_HANDSHAKE_INVALID) break;
+    }
+    g_sa_error = SA_ERROR_HANDSHAKE;
+    return false;
+}
+
 static bool scripting_addition_request_handshake(char *version, uint32_t *attrib)
 {
-    int sockfd;
+    // One deadline bounds connect, fragmented writes, and fragmented reads together.
+    uint64_t deadline = scripting_addition_now_ns() + 1000000000ULL;
+    int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+    g_sa_error = SA_ERROR_CONNECTION;
+    if (fd == -1) return false;
+
     bool result = false;
-    char rsp[BUFSIZ] = {0};
-    char bytes[SA_SOCKET_BUFF_LEN] = { 0x01, 0x00, SA_OPCODE_HANDSHAKE };
+    int no_sigpipe = 1;
+    setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &no_sigpipe, sizeof(no_sigpipe));
+    if (fcntl(fd, F_SETFL, O_NONBLOCK) == -1) goto out;
 
-    if (socket_open(&sockfd)) {
-        if (socket_connect(sockfd, g_sa_socket_file)) {
-            if (send(sockfd, bytes, 3, 0) != -1) {
-                int length = recv(sockfd, rsp, sizeof(rsp)-1, 0);
-                if (length <= 0) goto out;
-
-                char *zero = rsp;
-                while (*zero != '\0') ++zero;
-
-                assert(*zero == '\0');
-                memcpy(version, rsp, zero - rsp + 1);
-                memcpy(attrib, zero+1, sizeof(uint32_t));
-
-                result = true;
-            }
-        }
-
-out:
-        socket_close(sockfd);
+    struct sockaddr_un address = { .sun_family = AF_UNIX };
+    address.sun_len = sizeof(address);
+    if (snprintf(address.sun_path, sizeof(address.sun_path), "%s", g_sa_socket_file) >= (int)sizeof(address.sun_path)) goto out;
+    if (connect(fd, (struct sockaddr *)&address, sizeof(address)) == -1) {
+        if (errno != EINPROGRESS && errno != EAGAIN) goto out;
+        if (!scripting_addition_wait(fd, POLLOUT, deadline)) goto out;
+        int error = 0;
+        socklen_t size = sizeof(error);
+        if (getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &size) == -1 || error) goto out;
     }
 
+    const char request[] = { 0x01, 0x00, SA_OPCODE_HANDSHAKE };
+    size_t sent = 0;
+    while (sent < sizeof(request)) {
+        if (!scripting_addition_wait(fd, POLLOUT, deadline)) goto out;
+        ssize_t count = send(fd, request + sent, sizeof(request) - sent, 0);
+        if (count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)) continue;
+        if (count <= 0) goto out;
+        sent += count;
+    }
+
+    struct sa_handshake handshake;
+    if (!scripting_addition_read_handshake(fd, deadline, &handshake)) goto out;
+    memcpy(version, handshake.version, strlen(handshake.version) + 1);
+    *attrib = handshake.attributes;
+    g_sa_error = SA_ERROR_NONE;
+    result = true;
+out:
+    close(fd);
     return result;
+}
+
+static bool scripting_addition_preflight(uint32_t required, bool (*query)(char *, uint32_t *))
+{
+    g_sa_error = SA_ERROR_NONE;
+    g_sa_missing_attributes = 0;
+    if (!required) return true;
+
+    char version[SA_HANDSHAKE_VERSION_MAX];
+    uint32_t attributes = 0;
+    if (!query(version, &attributes)) {
+        if (g_sa_error == SA_ERROR_NONE) g_sa_error = SA_ERROR_CONNECTION;
+        return false;
+    }
+    if (!string_equals(version, OSAX_VERSION)) {
+        g_sa_error = SA_ERROR_VERSION;
+        return false;
+    }
+    g_sa_missing_attributes = required & ~attributes;
+    if (g_sa_missing_attributes) {
+        g_sa_error = SA_ERROR_CAPABILITY;
+        return false;
+    }
+    return true;
 }
 
 static int scripting_addition_perform_validation(void)
@@ -279,8 +384,12 @@ static int scripting_addition_perform_validation(void)
     }
 
     if (string_equals(version, OSAX_VERSION)) {
-        if ((attrib & OSAX_ATTRIB_ALL) == OSAX_ATTRIB_ALL) {
-            notify("scripting-addition", "payload v%s", version);
+        NSOperatingSystemVersion os_version = [[NSProcessInfo processInfo] operatingSystemVersion];
+        uint32_t required = os_version.majorVersion == 27
+                          ? OSAX_ATTRIB_DOCK_SPACES | OSAX_ATTRIB_ADD_SPACE | OSAX_ATTRIB_REM_SPACE
+                          : OSAX_ATTRIB_ALL;
+        if ((attrib & required) == required) {
+            notify("scripting-addition", "payload v%s (capabilities 0x%X)", version, attrib);
             return 0;
         }
 
@@ -421,15 +530,22 @@ out:
 
 static bool scripting_addition_send_bytes(char *bytes, int length)
 {
+    enum sa_opcode opcode = (unsigned char)bytes[sizeof(int16_t)];
+    if (!scripting_addition_preflight(sa_required_attributes(opcode), scripting_addition_request_handshake)) return false;
+
+    g_sa_error = SA_ERROR_TRANSPORT;
     int sockfd;
     char dummy;
     bool result = false;
 
     if (socket_open(&sockfd)) {
         if (socket_connect(sockfd, g_sa_socket_file)) {
-            if (send(sockfd, bytes, length, 0) != -1) {
-                recv(sockfd, &dummy, 1, 0);
-                result = true;
+            if (send(sockfd, bytes, length, 0) == length) {
+                // EOF is the existing payload's normal completion signal, not an execution result.
+                ssize_t count;
+                do { count = recv(sockfd, &dummy, 1, 0); } while (count < 0 && errno == EINTR);
+                result = count >= 0;
+                if (result) g_sa_error = SA_ERROR_NONE;
             }
         }
 

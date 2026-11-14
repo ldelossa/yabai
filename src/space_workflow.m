@@ -13,6 +13,40 @@ struct space_workflow_pending_create
 static struct space_workflow_pending_create g_space_workflow_pending_create;
 static uint64_t g_space_workflow_generation;
 
+static bool space_workflow_reserve_create(uint32_t did, const char *label)
+{
+    if (g_space_workflow_pending_create.active) return false;
+    g_space_workflow_pending_create = (struct space_workflow_pending_create) {
+        .active = true,
+        .did = did,
+        .generation = ++g_space_workflow_generation,
+        .label = label && *label ? strdup(label) : NULL,
+    };
+    return true;
+}
+
+static void space_workflow_clear_pending_create(void)
+{
+    free(g_space_workflow_pending_create.label);
+    memset(&g_space_workflow_pending_create, 0, sizeof(g_space_workflow_pending_create));
+}
+
+static bool space_workflow_expire_create(uint64_t generation)
+{
+    if (!g_space_workflow_pending_create.active || generation != g_space_workflow_pending_create.generation) return false;
+    space_workflow_clear_pending_create();
+    return true;
+}
+
+static bool space_workflow_take_created_label(uint32_t did, char **label)
+{
+    if (!g_space_workflow_pending_create.active || did != g_space_workflow_pending_create.did) return false;
+    *label = g_space_workflow_pending_create.label;
+    g_space_workflow_pending_create.label = NULL;
+    space_workflow_clear_pending_create();
+    return true;
+}
+
 static char *space_workflow_copy_string(char *string)
 {
     return string && *string ? strdup(string) : NULL;
@@ -108,7 +142,7 @@ static const char *space_workflow_error_message(enum space_op_error error)
     case SPACE_OP_ERROR_SAME_SPACE:           return "The selected space is already focused.";
     case SPACE_OP_ERROR_DISPLAY_IS_ANIMATING: return "The display is currently animating.";
     case SPACE_OP_ERROR_IN_MISSION_CONTROL:   return "This action is unavailable while Mission Control is active.";
-    case SPACE_OP_ERROR_SCRIPTING_ADDITION:   return "The scripting addition could not complete the space action.";
+    case SPACE_OP_ERROR_SCRIPTING_ADDITION:   return scripting_addition_error_message();
     case SPACE_OP_ERROR_INVALID_TYPE:         return "The selected space type does not support this action.";
     default:                                  return "The space action could not be completed.";
     }
@@ -161,21 +195,15 @@ void space_workflow_submit_layout(enum view_type layout)
 
 static void space_workflow_begin_create(struct space_workflow_request *request)
 {
-    if (g_space_workflow_pending_create.active) {
+    uint64_t active_sid = space_manager_active_space();
+    if (!space_workflow_reserve_create(space_display_id(active_sid), request->text)) {
         space_workflow_deliver_result("A space creation request is already in progress.", false, false);
         return;
     }
 
-    uint64_t active_sid = space_manager_active_space();
-    g_space_workflow_pending_create.active = true;
-    g_space_workflow_pending_create.did = space_display_id(active_sid);
-    g_space_workflow_pending_create.generation = ++g_space_workflow_generation;
-    g_space_workflow_pending_create.label = space_workflow_copy_string(request->text);
-
     enum space_op_error result = space_manager_add_space(active_sid);
     if (result != SPACE_OP_ERROR_SUCCESS) {
-        free(g_space_workflow_pending_create.label);
-        memset(&g_space_workflow_pending_create, 0, sizeof(g_space_workflow_pending_create));
+        space_workflow_clear_pending_create();
         space_workflow_deliver_result(space_workflow_error_message(result), false, false);
         return;
     }
@@ -383,10 +411,7 @@ void space_workflow_handle_request(void *context)
         space_workflow_deliver_result("", true, true);
     } break;
     case SPACE_WORKFLOW_CREATE_TIMEOUT:
-        if (g_space_workflow_pending_create.active &&
-            request->generation == g_space_workflow_pending_create.generation) {
-            free(g_space_workflow_pending_create.label);
-            memset(&g_space_workflow_pending_create, 0, sizeof(g_space_workflow_pending_create));
+        if (space_workflow_expire_create(request->generation)) {
             space_workflow_deliver_result("Timed out while waiting for the new space.", false, false);
         }
         break;
@@ -403,11 +428,8 @@ void space_workflow_handle_space_created(uint64_t sid)
 {
     if (!g_space_workflow_pending_create.active) return;
     if (!space_is_user(sid)) return;
-    if (space_display_id(sid) != g_space_workflow_pending_create.did) return;
-
-    char *label = g_space_workflow_pending_create.label;
-    g_space_workflow_pending_create.label = NULL;
-    g_space_workflow_pending_create.active = false;
+    char *label = NULL;
+    if (!space_workflow_take_created_label(space_display_id(sid), &label)) return;
 
     if (label && *label) {
         space_manager_set_label_for_space(&g_space_manager, sid, label);

@@ -25,6 +25,10 @@
 #include <stdio.h>
 
 #include "common.h"
+#include "pattern_scan.h"
+#include "dock_27_3.h"
+#include "space_compat.h"
+#include <sys/sysctl.h>
 
 #ifdef __x86_64__
 #include "x64_payload.m"
@@ -264,14 +268,114 @@ static bool verify_os_version(NSOperatingSystemVersion os_version)
     return false;
 }
 
+
+#ifdef __arm64__
+static bool dock_core_receiver_is_supported(id spaces)
+{
+    if (!spaces || object_getClass(spaces) != objc_getClass("Spaces")) return false;
+    Method current = class_getInstanceMethod(object_getClass(spaces), @selector(currentSpaceForDisplay:));
+    Method display = class_getInstanceMethod(object_getClass(spaces), @selector(displayIDForSpace:));
+    Method list = class_getInstanceMethod(object_getClass(spaces), @selector(spacesForDisplay:));
+    if (!current || !display || !list ||
+        strcmp(method_getTypeEncoding(current), "@20@0:8I16") ||
+        strcmp(method_getTypeEncoding(display), "I24@0:8@16") ||
+        strcmp(method_getTypeEncoding(list), "@24@0:8@16")) return false;
+
+    NSArray *displays = sa_display_spaces(spaces);
+    if (!displays || !displays.count || !objc_getClass("ManagedSpace")) return false;
+    for (id item in displays) {
+        id current_space = sa_get_object_ivar(item, "_currentSpace");
+        if (!current_space || ![current_space respondsToSelector:@selector(spid)]) return false;
+    }
+    return true;
+}
+
+static uint64_t dock_profile_pattern(uint64_t baseaddr, const char *pattern, uint64_t expected)
+{
+    const struct segment_command_64 *text = getsegbyname("__TEXT");
+    const struct section_64 *code = getsectbyname("__TEXT", "__text");
+    if (!text || !code || !(text->initprot & VM_PROT_EXECUTE) ||
+        !(code->flags & (S_ATTR_PURE_INSTRUCTIONS | S_ATTR_SOME_INSTRUCTIONS)) ||
+        code->addr < text->vmaddr || code->addr - text->vmaddr > text->vmsize ||
+        code->size > text->vmsize - (code->addr - text->vmaddr)) return 0;
+    const uint8_t *start = (const uint8_t *)(baseaddr + code->addr - text->vmaddr);
+    const uint8_t *match = sa_find_unique_pattern(start, code->size, pattern);
+    return (uint64_t)match == baseaddr + expected ? (uint64_t)match : 0;
+}
+
+static void init_dock_27_3(NSOperatingSystemVersion version)
+{
+    const struct mach_header_64 *header = (const struct mach_header_64 *)_dyld_get_image_header(0);
+    if (!header || header->magic != MH_MAGIC_64) return;
+    const uint8_t *command = (const uint8_t *)(header + 1);
+    const uint8_t *end = command + header->sizeofcmds;
+    const unsigned char *uuid = NULL;
+    for (uint32_t i = 0; i < header->ncmds; ++i) {
+        if ((size_t)(end - command) < sizeof(struct load_command)) return;
+        const struct load_command *load = (const struct load_command *)command;
+        if (load->cmdsize < sizeof(*load) || load->cmdsize > (size_t)(end - command)) return;
+        if (load->cmd == LC_UUID && load->cmdsize >= sizeof(struct uuid_command)) {
+            uuid = ((const struct uuid_command *)load)->uuid;
+        }
+        command += load->cmdsize;
+    }
+    char build[32] = {0};
+    size_t build_size = sizeof(build);
+    if (sysctlbyname("kern.osversion", build, &build_size, NULL, 0) != 0) return;
+    build[sizeof(build) - 1] = '\0';
+    if (!sa_dock_27_3_matches(version.majorVersion, version.minorVersion, header->cpusubtype, build, uuid)) {
+        NSLog(@"[yabai-sa] no validated core profile for this macOS build / Dock UUID / architecture; capabilities disabled");
+        return;
+    }
+
+    NSOperatingSystemVersion family = { .majorVersion = 26, .minorVersion = 5 };
+    uint64_t baseaddr = static_base_address() + image_slide();
+    uint64_t global = dock_profile_pattern(baseaddr, get_dock_spaces_pattern(family), DOCK_27_3_DOCK_SPACES_OFFSET);
+    uint64_t add = dock_profile_pattern(baseaddr, get_add_space_pattern(family), DOCK_27_3_ADD_SPACE_OFFSET);
+    uint64_t remove = dock_profile_pattern(baseaddr, get_remove_space_pattern(family), DOCK_27_3_REMOVE_SPACE_OFFSET);
+    uint64_t slot = 0;
+    const struct segment_command_64 *data = getsegbyname("__DATA");
+    if (!global || !add || !remove || !data || !(data->initprot & VM_PROT_WRITE) ||
+        !sa_decode_adrp_add((const uint8_t *)global, global, &slot) ||
+        slot != baseaddr + DOCK_27_3_POINTER_SLOT_OFFSET ||
+        slot < data->vmaddr + image_slide() ||
+        slot - (data->vmaddr + image_slide()) > data->vmsize ||
+        sizeof(id) > data->vmsize - (slot - (data->vmaddr + image_slide()))) {
+        NSLog(@"[yabai-sa] validated core profile failed signature/pointer checks; capabilities disabled");
+        return;
+    }
+
+    sa_on_main_queue(^{
+        id candidate = *(id *)slot;
+        if (!dock_core_receiver_is_supported(candidate)) {
+            NSLog(@"[yabai-sa] core receiver/selector/storage checks failed; capabilities disabled");
+            return;
+        }
+        dock_spaces = [candidate retain];
+        add_space_fp = (uint64_t)ptrauth_sign_unauthenticated((void *)add, ptrauth_key_asia, 0);
+        remove_space_fp = (uint64_t)ptrauth_sign_unauthenticated((void *)remove, ptrauth_key_asia, 0);
+        NSLog(@"[yabai-sa] validated 27.3 core profile enabled (0x0D); movement, privileged window focus, and animation patch disabled");
+    });
+}
+#endif
+
 static void init_instances()
 {
     NSOperatingSystemVersion os_version = [[NSProcessInfo processInfo] operatingSystemVersion];
     if (!verify_os_version(os_version)) return;
 
-    // macOS 27+ is the target for this fork. Start with the latest known
-    // private-API pattern family and replace individual patterns as Dock evolves.
-    if (os_version.majorVersion >= 27) {
+    // Later Dock builds changed both their code layout and receiver APIs.
+    // Unknown builds/slices fail closed rather than falling through to 26.5.
+    if (os_version.majorVersion >= 27 &&
+        (os_version.majorVersion != 27 || os_version.minorVersion >= 2)) {
+#ifdef __arm64__
+        init_dock_27_3(os_version);
+#endif
+        return;
+    }
+
+    // Preserve the existing 27.0/27.1 compatibility path.
+    if (os_version.majorVersion == 27) {
         os_version.majorVersion = 26;
         os_version.minorVersion = 5;
         os_version.patchVersion = 0;
@@ -403,64 +507,50 @@ static void init_instances()
 
 static inline id get_ivar_value(id instance, const char *name)
 {
-    id result = nil;
-    object_getInstanceVariable(instance, name, (void **) &result);
-    return result;
+    return sa_get_object_ivar(instance, name);
 }
 
 static inline void set_ivar_value(id instance, const char *name, id value)
 {
-    object_setInstanceVariable(instance, name, value);
+    if (sa_object_ivar(instance, name)) object_setInstanceVariable(instance, name, value);
 }
 
 static inline uint64_t get_space_id(id space)
 {
-    return ((uint64_t (*)(id, SEL)) objc_msgSend)(space, @selector(spid));
+    return space && [space respondsToSelector:@selector(spid)]
+         ? ((uint64_t (*)(id, SEL))objc_msgSend)(space, @selector(spid)) : 0;
 }
 
 static inline id space_for_display_with_id(CFStringRef display_uuid, uint64_t space_id)
 {
-    NSArray *spaces_for_display = ((NSArray *(*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, @selector(spacesForDisplay:), display_uuid);
-    for (id space in spaces_for_display) {
-        if (space_id == get_space_id(space)) {
-            return space;
-        }
+    if (!display_uuid || !space_id || ![dock_spaces respondsToSelector:@selector(spacesForDisplay:)]) return nil;
+    NSArray *spaces = ((NSArray *(*)(id, SEL, CFStringRef))objc_msgSend)(dock_spaces, @selector(spacesForDisplay:), display_uuid);
+    for (id space in spaces) {
+        if (space_id == get_space_id(space)) return space;
     }
     return nil;
 }
 
 static inline id display_space_for_display_uuid(CFStringRef display_uuid)
 {
-    id result = nil;
-
-    NSArray *display_spaces = get_ivar_value(dock_spaces, "_displaySpaces");
-    if (display_spaces != nil) {
-        for (id display_space in display_spaces) {
-            id display_source_space = get_ivar_value(display_space, "_currentSpace");
-            uint64_t sid = get_space_id(display_source_space);
-            CFStringRef uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), sid);
-            bool match = CFEqual(uuid, display_uuid);
-            CFRelease(uuid);
-            if (match) {
-                result = display_space;
-                break;
-            }
-        }
+    if (!display_uuid) return nil;
+    for (id display_space in sa_display_spaces(dock_spaces)) {
+        uint64_t sid = get_space_id(get_ivar_value(display_space, "_currentSpace"));
+        if (!sid) continue;
+        CFStringRef uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), sid);
+        if (!uuid) continue;
+        bool match = CFEqual(uuid, display_uuid);
+        CFRelease(uuid);
+        if (match) return display_space;
     }
-
-    return result;
+    return nil;
 }
 
 static inline id display_space_for_space_with_id(uint64_t space_id)
 {
-    NSArray *display_spaces = get_ivar_value(dock_spaces, "_displaySpaces");
-    if (display_spaces != nil) {
-        for (id display_space in display_spaces) {
-            id display_source_space = get_ivar_value(display_space, "_currentSpace");
-            if (get_space_id(display_source_space) == space_id) {
-                return display_space;
-            }
-        }
+    if (!space_id) return nil;
+    for (id display_space in sa_display_spaces(dock_spaces)) {
+        if (get_space_id(get_ivar_value(display_space, "_currentSpace")) == space_id) return display_space;
     }
     return nil;
 }
@@ -534,52 +624,53 @@ typedef void (*remove_space_call)(id space, id display_space, id dock_spaces, ui
 static void do_space_destroy(char *message)
 {
     if (dock_spaces == nil || !can_remove_space()) return;
-
     uint64_t space_id;
     unpack(space_id);
 
-    CFStringRef display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
-    uint64_t active_space_id = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), display_uuid);
-
-    id space = space_for_display_with_id(display_uuid, space_id);
-    id display_space = display_space_for_display_uuid(display_uuid);
-
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        if (remove_space_fp) {
-            ((remove_space_call) remove_space_fp)(space, display_space, dock_spaces, space_id, space_id);
-        } else {
-            SEL selector = NSSelectorFromString(@"removeSpace:");
-            ((void (*)(id, SEL, id)) objc_msgSend)(dock_spaces, selector, space);
+    sa_on_main_queue(^{
+        CFStringRef display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+        if (!display_uuid) return;
+        id space = space_for_display_with_id(display_uuid, space_id);
+        id display_space = display_space_for_display_uuid(display_uuid);
+        if (!space || !display_space) {
+            CFRelease(display_uuid);
+            return;
         }
+        uint64_t active_space_id = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), display_uuid);
+        if (remove_space_fp) {
+            ((remove_space_call)remove_space_fp)(space, display_space, dock_spaces, space_id, space_id);
+        } else {
+            ((void (*)(id, SEL, id))objc_msgSend)(dock_spaces, NSSelectorFromString(@"removeSpace:"), space);
+        }
+        if (active_space_id == space_id) {
+            uint64_t next = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), display_uuid);
+            id next_space = space_for_display_with_id(display_uuid, next);
+            if (next_space) set_ivar_value(display_space, "_currentSpace", [next_space retain]);
+        }
+        CFRelease(display_uuid);
     });
-
-    if (active_space_id == space_id) {
-        uint64_t dest_space_id = SLSManagedDisplayGetCurrentSpace(SLSMainConnectionID(), display_uuid);
-        id dest_space = space_for_display_with_id(display_uuid, dest_space_id);
-        set_ivar_value(display_space, "_currentSpace", [dest_space retain]);
-    }
-
-    CFRelease(display_uuid);
 }
 
 static void do_space_create(char *message)
 {
     if (dock_spaces == nil || !can_add_space()) return;
-
     uint64_t space_id;
     unpack(space_id);
 
-    CFStringRef __block display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
-    dispatch_sync(dispatch_get_main_queue(), ^{
-        id new_space = macOSSequoia
-                     ? [[objc_getClass("ManagedSpace") alloc] init]
-                     : [[objc_getClass("Dock.ManagedSpace") alloc] init];
-        if (add_space_fp) {
-            id display_space = display_space_for_display_uuid(display_uuid);
-            asm__call_add_space(new_space, display_space, add_space_fp);
-        } else {
-            SEL selector = NSSelectorFromString(@"addSpace:forDisplayUUID:");
-            ((void (*)(id, SEL, id, CFStringRef)) objc_msgSend)(dock_spaces, selector, new_space, display_uuid);
+    sa_on_main_queue(^{
+        CFStringRef display_uuid = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), space_id);
+        if (!display_uuid) return;
+        id display_space = display_space_for_display_uuid(display_uuid);
+        if (display_space) {
+            Class space_class = objc_getClass(macOSSequoia ? "ManagedSpace" : "Dock.ManagedSpace");
+            id new_space = space_class ? [[space_class alloc] init] : nil;
+            if (new_space) {
+                if (add_space_fp) {
+                    asm__call_add_space(new_space, display_space, add_space_fp);
+                } else {
+                    ((void (*)(id, SEL, id, CFStringRef))objc_msgSend)(dock_spaces, NSSelectorFromString(@"addSpace:forDisplayUUID:"), new_space, display_uuid);
+                }
+            }
         }
         CFRelease(display_uuid);
     });
@@ -588,36 +679,27 @@ static void do_space_create(char *message)
 static void do_space_focus(char *message)
 {
     if (dock_spaces == nil) return;
-
     uint64_t dest_space_id;
     unpack(dest_space_id);
+    if (!dest_space_id) return;
 
-    if (dest_space_id) {
-        CFStringRef dest_display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), dest_space_id);
-        id source_space = macOSSequoia
-                        ? ((id (*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, @selector(currentSpaceForDisplayUUID:), dest_display)
-                        : ((id (*)(id, SEL, CFStringRef)) objc_msgSend)(dock_spaces, @selector(currentSpaceforDisplayUUID:), dest_display);
-        uint64_t source_space_id = get_space_id(source_space);
-
-        if (source_space_id != dest_space_id) {
-            id dest_space = space_for_display_with_id(dest_display, dest_space_id);
-            if (dest_space != nil) {
-                id display_space = display_space_for_space_with_id(source_space_id);
-                if (display_space != nil) {
-                    NSArray *ns_source_space = @[ @(source_space_id) ];
-                    NSArray *ns_dest_space = @[ @(dest_space_id) ];
-                    SLSShowSpaces(SLSMainConnectionID(), (__bridge CFArrayRef) ns_dest_space);
-                    SLSHideSpaces(SLSMainConnectionID(), (__bridge CFArrayRef) ns_source_space);
-                    SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), dest_display, dest_space_id);
-                    set_ivar_value(display_space, "_currentSpace", [dest_space retain]);
-                    [ns_dest_space release];
-                    [ns_source_space release];
-                }
-            }
+    sa_on_main_queue(^{
+        CFStringRef display = SLSCopyManagedDisplayForSpace(SLSMainConnectionID(), dest_space_id);
+        if (!display) return;
+        id dest_space = space_for_display_with_id(display, dest_space_id);
+        id source_space = sa_current_space_for_display(dock_spaces, macOSSequoia, display, dest_space);
+        uint64_t source_id = get_space_id(source_space);
+        id display_space = source_id ? display_space_for_space_with_id(source_id) : nil;
+        if (source_id && source_id != dest_space_id && dest_space && display_space) {
+            sa_with_space_lists(source_id, dest_space_id, ^(CFArrayRef source, CFArrayRef dest) {
+                SLSShowSpaces(SLSMainConnectionID(), dest);
+                SLSHideSpaces(SLSMainConnectionID(), source);
+                SLSManagedDisplaySetCurrentSpace(SLSMainConnectionID(), display, dest_space_id);
+                set_ivar_value(display_space, "_currentSpace", [dest_space retain]);
+            });
         }
-
-        CFRelease(dest_display);
-    }
+        CFRelease(display);
+    });
 }
 
 static void do_window_scale(char *message)
