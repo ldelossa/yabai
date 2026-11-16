@@ -82,7 +82,9 @@
 #include "space_workflow.h"
 #include "status_island.h"
 #include "space_cleaner.h"
+#include "modal_style.h"
 
+#include "modal_style.c"
 #include "sa.m"
 #include "mission_control.c"
 #include "stack_selector.m"

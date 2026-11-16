@@ -775,20 +775,44 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     if (_workspace_menu) return;
 
-    _workspace_menu = [self makeMenuPanelWithWidth:230.0f rowCount:_space_items.count];
-    NSView *content = [_workspace_menu.contentView.subviews objectAtIndex:0];
+    NSUInteger count = _space_items.count;
+    NSUInteger visibleRows = MIN(count, (NSUInteger)10);
     CGFloat rowHeight = 30.0f;
-    for (int i = 0; i < (int)_space_items.count; ++i) {
+    CGFloat listWidth = 218.0f;
+
+    _workspace_menu = [self makeMenuPanelWithWidth:230.0f rowCount:(NSInteger)visibleRows];
+    NSView *content = [_workspace_menu.contentView.subviews objectAtIndex:0];
+
+    NSView *listView = nil;
+    if (count > visibleRows) {
+        NSScrollView *scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(6.0f, 6.0f, listWidth, visibleRows * rowHeight)];
+        scroll.drawsBackground = NO;
+        scroll.hasVerticalScroller = YES;
+        scroll.autohidesScrollers = YES;
+        scroll.scrollerStyle = NSScrollerStyleOverlay;
+        scroll.borderType = NSNoBorder;
+        NSView *document = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, listWidth, count * rowHeight)];
+        scroll.documentView = document;
+        [content addSubview:scroll];
+        listView = document;
+        [scroll release];
+    } else {
+        listView = [[NSView alloc] initWithFrame:NSMakeRect(6.0f, 6.0f, listWidth, count * rowHeight)];
+        [content addSubview:listView];
+    }
+
+    for (NSUInteger i = 0; i < count; ++i) {
         native_palette_item *item = _space_items[i];
         status_island_menu_row *row = [[status_island_menu_row alloc] initWithFrame:NSZeroRect];
         row.action = @selector(workspaceRowClicked:);
         row.target = self;
         row.context = (void *)(uintptr_t)item.representedValue;
         [row setTitle:item.title meta:item.detail checked:(item.representedValue == _focused_sid)];
-        row.frame = NSMakeRect(6.0f, 6.0f + i * rowHeight, 218.0f, rowHeight);
-        [content addSubview:row];
+        row.frame = NSMakeRect(0, i * rowHeight, listWidth, rowHeight);
+        [listView addSubview:row];
         [row release];
     }
+    [listView release];
 }
 
 - (void)buildLayoutMenu

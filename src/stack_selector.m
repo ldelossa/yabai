@@ -390,9 +390,21 @@ static NSBezierPath *stack_selector_tab_bezier(CGRect rect, bool horizontal, enu
 {
     NSImage *reset = [NSImage imageWithSystemSymbolName:@"arrow.counterclockwise"
                               accessibilityDescription:@"Use global default"];
-    reset = [reset imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:14.0f
+    reset = [reset imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:12.0f
                                                                                                  weight:NSFontWeightMedium]];
-    [reset drawInRect:NSMakeRect(NSMidX(rect) - 8.0f, NSMidY(rect) - 8.0f, 16.0f, 16.0f)];
+
+    NSString *label = @"Use global default";
+    NSDictionary *attributes = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:11.0f weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: NSColor.labelColor,
+    };
+    NSSize text_size = [label sizeWithAttributes:attributes];
+
+    CGFloat total_width = 16.0f + 6.0f + ceil(text_size.width);
+    CGFloat x = NSMidX(rect) - total_width / 2.0f;
+    CGFloat y = NSMidY(rect);
+    [reset drawInRect:NSMakeRect(x, y - 8.0f, 16.0f, 16.0f)];
+    [label drawAtPoint:NSMakePoint(x + 16.0f + 6.0f, y - text_size.height / 2.0f) withAttributes:attributes];
 }
 
 - (void)drawRect:(NSRect)dirty_rect

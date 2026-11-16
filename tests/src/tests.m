@@ -17,6 +17,9 @@ typedef TEST_SIG(function);
 #include "stack_order.c"
 #include "sa_protocol.c"
 #include "osax_compat.c"
+#include "modal_style.c"
+#include "native_palette_layout.c"
+#include "native_rename.c"
 
 #define TEST_ENTRY(name) { #name, test_##name },
 #define TEST_LIST                                              \
@@ -40,7 +43,18 @@ typedef TEST_SIG(function);
     TEST_ENTRY(osax_pattern_bounds_and_uniqueness)              \
     TEST_ENTRY(osax_profile_and_pointer_decode)                 \
     TEST_ENTRY(osax_space_selector_and_storage_guards)          \
-    TEST_ENTRY(osax_focus_list_ownership)
+    TEST_ENTRY(osax_focus_list_ownership)                        \
+    TEST_ENTRY(modal_style_width_metrics)                        \
+    TEST_ENTRY(modal_style_list_height_bounds)                   \
+    TEST_ENTRY(modal_style_state_wrappers)                      \
+    TEST_ENTRY(native_palette_short_lists_fit_after_layout)     \
+    TEST_ENTRY(native_palette_inset_negative_control)           \
+    TEST_ENTRY(native_palette_capped_lists_scroll_after_layout)  \
+    TEST_ENTRY(native_palette_shrinks_back_to_two_rows)          \
+    TEST_ENTRY(native_rename_inline_controls_fit)                \
+    TEST_ENTRY(native_rename_errors_scroll_and_shrink)           \
+    TEST_ENTRY(native_rename_actions_and_teardown)                \
+    TEST_ENTRY(native_rename_controller_routes_keys)
 
 static struct {
     char *name;

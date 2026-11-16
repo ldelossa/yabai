@@ -1,6 +1,10 @@
 #ifndef NATIVE_PALETTE_H
 #define NATIVE_PALETTE_H
 
+#include "modal_style.h"
+
+void native_palette_configure_table(NSTableView *table);
+
 enum native_palette_row_visual_state
 {
     NATIVE_PALETTE_ROW_NONE,
@@ -65,11 +69,26 @@ enum native_palette_badge_style
 @interface native_palette_row_view : NSTableCellView {
     NSImageView *_iconView;
     NSTextField *_titleField;
-    NSTextField *_detailField;
-    NSTextField *_categoryField;
-    NSTextField *_badgeField;
+    NSTextField *_contextField;
 }
 - (void)updateWithItem:(native_palette_item *)item;
+@end
+
+@interface native_palette_rename_view : NSView {
+    NSTextField *_nameField, *_errorField;
+    NSButton *_saveButton, *_cancelButton;
+    NSScrollView *_errorScroll;
+    struct modal_rename_layout _geometry;
+    CGFloat _errorHeight;
+}
+@property(readonly) NSTextField *nameField;
+@property(readonly) NSButton *saveButton;
+@property(readonly) NSButton *cancelButton;
+@property(readonly) NSScrollView *errorScroll;
+@property(copy) NSString *errorMessage;
+- (NSSize)configureForStyle:(enum modal_style)style availableHeight:(CGFloat)height;
+- (void)setEditingDelegate:(id<NSTextFieldDelegate>)delegate;
+- (void)updateFocus;
 @end
 
 #endif

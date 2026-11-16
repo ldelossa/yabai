@@ -142,7 +142,13 @@ The layout-cycle workflow rotates through `stack`, `bsp`, and `float`.
 | `stack_selector_anchor` | See the anchor values below. | `vertical-center-left` |
 | `status_island` | `on`, `off` | `on` |
 | `status_island_workspace_order` | `index`, `alphabetical`, `creation` | `index` |
+| `modal_style` | `default`, `compact` | `default` |
 | `space_cleaner` | `on`, `off` | `off` |
+
+`modal_style` controls the compactness of the command palette and island menus.
+`default` uses the quiet single-line list, and `compact` uses the tighter menu layout.
+Palette result lists grow with their content and scroll at a screen-constrained maximum of 420 points.
+Rename error details also use bounded scrolling; island workspace flyouts scroll after ten rows.
 
 ### Stack-selector anchors
 

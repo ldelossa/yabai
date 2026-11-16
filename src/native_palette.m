@@ -1,3 +1,17 @@
+void native_palette_configure_table(NSTableView *table)
+{
+    // Automatic resolves to Inset in this hierarchy, adding top padding even
+    // with zero intercell spacing/contentInsets. Plain makes row bounds match
+    // the content-sized viewport; do not compensate by enlarging the panel.
+    table.style = NSTableViewStylePlain;
+    table.headerView = nil;
+    table.backgroundColor = NSColor.clearColor;
+    table.rowHeight = modal_style_row_height();
+    table.intercellSpacing = NSMakeSize(0, 0);
+    table.columnAutoresizingStyle = NSTableViewUniformColumnAutoresizingStyle;
+    table.selectionHighlightStyle = NSTableViewSelectionHighlightStyleNone;
+}
+
 @implementation native_palette_item
 @synthesize title = _title;
 @synthesize detail = _detail;
@@ -89,60 +103,26 @@
 }
 @end
 
-@interface native_palette_badge_cell : NSTextFieldCell
-@end
-
-@implementation native_palette_badge_cell
-- (NSRect)drawingRectForBounds:(NSRect)rect
-{
-    NSRect drawing_rect = [super drawingRectForBounds:rect];
-    NSSize text_size = [self cellSizeForBounds:rect];
-    CGFloat height_delta = drawing_rect.size.height - text_size.height;
-    if (height_delta > 0.0f) {
-        drawing_rect.origin.y += floor(height_delta / 2.0f);
-        drawing_rect.size.height -= height_delta;
-    }
-    return drawing_rect;
-}
-@end
-
 @implementation native_palette_row_view
 - (instancetype)initWithFrame:(NSRect)frameRect
 {
     self = [super initWithFrame:frameRect];
     if (self) {
-        _iconView = [[NSImageView alloc] initWithFrame:NSMakeRect(10, 7, 30, 30)];
+        _iconView = [[NSImageView alloc] initWithFrame:NSZeroRect];
         _iconView.imageScaling = NSImageScaleProportionallyDown;
         [self addSubview:_iconView];
 
         _titleField = [NSTextField labelWithString:@""];
-        _titleField.frame = NSMakeRect(52, 23, 350, 18);
-        _titleField.font = [NSFont systemFontOfSize:14.0f weight:NSFontWeightSemibold];
+        _titleField.font = [NSFont systemFontOfSize:13.0f weight:NSFontWeightRegular];
         _titleField.lineBreakMode = NSLineBreakByTruncatingTail;
         [self addSubview:_titleField];
 
-        _detailField = [NSTextField labelWithString:@""];
-        _detailField.frame = NSMakeRect(52, 5, 400, 17);
-        _detailField.font = [NSFont monospacedSystemFontOfSize:11.0f weight:NSFontWeightRegular];
-        _detailField.textColor = NSColor.secondaryLabelColor;
-        _detailField.lineBreakMode = NSLineBreakByTruncatingTail;
-        [self addSubview:_detailField];
-
-        _categoryField = [NSTextField labelWithString:@""];
-        _categoryField.font = [NSFont systemFontOfSize:10.0f weight:NSFontWeightMedium];
-        _categoryField.textColor = NSColor.tertiaryLabelColor;
-        _categoryField.alignment = NSTextAlignmentRight;
-        [self addSubview:_categoryField];
-
-        _badgeField = [NSTextField labelWithString:@""];
-        _badgeField.cell = [[[native_palette_badge_cell alloc] initTextCell:@""] autorelease];
-        _badgeField.wantsLayer = YES;
-        _badgeField.layer.cornerRadius = 6.0f;
-        _badgeField.layer.masksToBounds = YES;
-        _badgeField.font = [NSFont systemFontOfSize:10.5f weight:NSFontWeightSemibold];
-        _badgeField.alignment = NSTextAlignmentCenter;
-        _badgeField.hidden = YES;
-        [self addSubview:_badgeField];
+        _contextField = [NSTextField labelWithString:@""];
+        _contextField.font = [NSFont systemFontOfSize:11.0f weight:NSFontWeightMedium];
+        _contextField.textColor = NSColor.secondaryLabelColor;
+        _contextField.alignment = NSTextAlignmentRight;
+        _contextField.lineBreakMode = NSLineBreakByTruncatingHead;
+        [self addSubview:_contextField];
     }
     return self;
 }
@@ -151,63 +131,187 @@
 {
     [_iconView release];
     [_titleField release];
-    [_detailField release];
-    [_categoryField release];
-    [_badgeField release];
+    [_contextField release];
     [super dealloc];
 }
 
-- (NSColor *)badgeColorForStyle:(enum native_palette_badge_style)style
+// Generic action categories repeat across every row and add no signal; keep
+// contextual categories (app name, Current, New Space) as a trailing token.
+- (NSString *)contextForItem:(native_palette_item *)item
 {
-    switch (style) {
-    case NATIVE_PALETTE_BADGE_SELECTOR: return NSColor.systemOrangeColor;
-    case NATIVE_PALETTE_BADGE_ENUM: return NSColor.systemBlueColor;
-    case NATIVE_PALETTE_BADGE_NATIVE: return NSColor.systemGreenColor;
-    case NATIVE_PALETTE_BADGE_TEXT:
-    default: return NSColor.secondaryLabelColor;
+    NSString *category = item.category;
+    if (!category.length) return nil;
+    if (item.kind == NATIVE_PALETTE_ITEM_ACTION &&
+        ([category isEqualToString:@"Window"] || [category isEqualToString:@"Space"] ||
+         [category isEqualToString:@"Display"] || [category isEqualToString:@"Setting"])) {
+        return nil;
     }
+    return category;
 }
 
 - (void)updateWithItem:(native_palette_item *)item
 {
+    bool compact = modal_style_current() == MODAL_STYLE_COMPACT;
+    CGFloat height = self.bounds.size.height;
+    CGFloat width = self.bounds.size.width;
+    CGFloat leading = compact ? 10.0f : 12.0f;
+    CGFloat iconSize = compact ? 15.0f : 16.0f;
+    CGFloat gap = compact ? 8.0f : 9.0f;
+    CGFloat titleHeight = compact ? 15.0f : 17.0f;
+    CGFloat contextHeight = compact ? 14.0f : 15.0f;
+
     if (item.iconImage) {
         _iconView.image = item.iconImage;
         _iconView.contentTintColor = nil;
     } else {
         NSImage *image = [NSImage imageWithSystemSymbolName:item.symbolName accessibilityDescription:nil];
-        image = [image imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:16.0f weight:NSFontWeightMedium]];
+        image = [image imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:iconSize weight:NSFontWeightMedium]];
         _iconView.image = image;
         _iconView.contentTintColor = NSColor.controlAccentColor;
     }
+    _iconView.frame = NSMakeRect(leading, (height - iconSize) / 2.0f, iconSize, iconSize);
 
+    _titleField.font = [NSFont systemFontOfSize:compact ? 12.0f : 13.0f weight:NSFontWeightRegular];
     _titleField.stringValue = item.title ?: @"";
-    _detailField.stringValue = item.detail ?: @"";
 
-    CGFloat rightEdge = self.bounds.size.width;
-    NSString *badge = item.badge;
-    if (badge.length) {
-        _badgeField.stringValue = badge;
-        NSColor *tint = [self badgeColorForStyle:item.badgeStyle];
-        _badgeField.textColor = tint;
-        _badgeField.layer.backgroundColor = [tint colorWithAlphaComponent:0.12f].CGColor;
-        _badgeField.layer.borderColor = [tint colorWithAlphaComponent:0.45f].CGColor;
-        _badgeField.layer.borderWidth = 1.0f;
-        [_badgeField sizeToFit];
-        CGFloat badgeWidth = _badgeField.frame.size.width + 14.0f;
-        _badgeField.frame = NSMakeRect(rightEdge - badgeWidth - 12.0f, 13.0f, badgeWidth, 20.0f);
-        _badgeField.hidden = NO;
-        rightEdge -= badgeWidth + 20.0f;
+    CGFloat titleX = leading + iconSize + gap;
+    NSString *context = [self contextForItem:item];
+    if (context.length) {
+        _contextField.stringValue = context;
+        [_contextField sizeToFit];
+        CGFloat contextWidth = MIN(floor(_contextField.frame.size.width), width * 0.42f);
+        _contextField.frame = NSMakeRect(width - leading - contextWidth, (height - contextHeight) / 2.0f, contextWidth, contextHeight);
+        _titleField.frame = NSMakeRect(titleX, (height - titleHeight) / 2.0f, MAX(0.0f, width - leading - titleX - contextWidth - gap), titleHeight);
     } else {
-        _badgeField.hidden = YES;
+        _contextField.stringValue = @"";
+        _titleField.frame = NSMakeRect(titleX, (height - titleHeight) / 2.0f, MAX(0.0f, width - leading - titleX), titleHeight);
     }
 
-    if (item.category.length) {
-        _categoryField.stringValue = item.category.uppercaseString;
-        [_categoryField sizeToFit];
-        CGFloat categoryWidth = _categoryField.frame.size.width;
-        _categoryField.frame = NSMakeRect(rightEdge - categoryWidth, 14.0f, categoryWidth, 17.0f);
-    } else {
-        _categoryField.stringValue = @"";
+    NSString *tooltip = nil;
+    if (item.detail.length && item.category.length) {
+        tooltip = [NSString stringWithFormat:@"%@ — %@", item.detail, item.category];
+    } else if (item.detail.length) {
+        tooltip = item.detail;
+    } else if (item.category.length) {
+        tooltip = item.category;
     }
+    self.toolTip = tooltip;
+}
+@end
+
+@implementation native_palette_rename_view
+@synthesize nameField = _nameField;
+@synthesize saveButton = _saveButton;
+@synthesize cancelButton = _cancelButton;
+@synthesize errorScroll = _errorScroll;
+
+- (instancetype)initWithFrame:(NSRect)frame
+{
+    self = [super initWithFrame:frame];
+    if (self) {
+        // View ivars are borrowed from the owning subview tree. Do not manually
+        // release autoreleased labels during teardown (see deferred t-010).
+        self.accessibilityLabel = @"Rename workspace";
+
+        _nameField = [[[NSTextField alloc] initWithFrame:NSZeroRect] autorelease];
+        _nameField.controlSize = NSControlSizeSmall;
+        _nameField.font = [NSFont systemFontOfSize:13.0f];
+        _nameField.cell.usesSingleLineMode = YES;
+        _nameField.cell.scrollable = YES;
+        _nameField.placeholderString = @"Name (blank clears)";
+        _nameField.focusRingType = NSFocusRingTypeNone;
+        _nameField.wantsLayer = YES;
+        _nameField.layer.cornerRadius = 4.0f;
+        _nameField.layer.borderWidth = 1.0f;
+        _nameField.accessibilityLabel = @"Workspace label";
+        _nameField.toolTip = @"Leave blank to remove the label.";
+        [self addSubview:_nameField];
+
+        _saveButton = [NSButton buttonWithTitle:@"Rename" target:nil action:NULL];
+        _saveButton.controlSize = NSControlSizeSmall;
+        _saveButton.font = [NSFont systemFontOfSize:11.0f];
+        _saveButton.bezelStyle = NSBezelStyleRounded;
+        _saveButton.keyEquivalent = @"\r";
+        [self addSubview:_saveButton];
+
+        _cancelButton = [NSButton buttonWithTitle:@"Cancel" target:nil action:NULL];
+        _cancelButton.controlSize = NSControlSizeSmall;
+        _cancelButton.font = [NSFont systemFontOfSize:11.0f];
+        _cancelButton.bezelStyle = NSBezelStyleRounded;
+        _cancelButton.keyEquivalent = @"\x1b";
+        _cancelButton.toolTip = @"Cancel (Escape)";
+        [self addSubview:_cancelButton];
+
+        _errorScroll = [[[NSScrollView alloc] initWithFrame:NSZeroRect] autorelease];
+        _errorScroll.drawsBackground = NO;
+        _errorScroll.borderType = NSNoBorder;
+        _errorScroll.hasVerticalScroller = YES;
+        _errorScroll.autohidesScrollers = YES;
+        _errorScroll.scrollerStyle = NSScrollerStyleOverlay;
+        _errorScroll.automaticallyAdjustsContentInsets = NO;
+        _errorScroll.contentInsets = NSEdgeInsetsZero;
+        _errorField = [NSTextField labelWithString:@""];
+        _errorField.font = [NSFont systemFontOfSize:11.0f];
+        _errorField.textColor = NSColor.systemRedColor;
+        _errorField.selectable = YES;
+        _errorField.maximumNumberOfLines = 0;
+        _errorField.lineBreakMode = NSLineBreakByWordWrapping;
+        _errorField.cell.wraps = YES;
+        _errorField.cell.scrollable = NO;
+        _errorScroll.documentView = _errorField;
+        [self addSubview:_errorScroll];
+        _errorScroll.hidden = YES;
+    }
+    return self;
+}
+
+- (void)setEditingDelegate:(id<NSTextFieldDelegate>)delegate
+{
+    _nameField.delegate = delegate;
+    _errorField.delegate = delegate;
+}
+
+- (NSString *)errorMessage
+{
+    return _errorField.stringValue;
+}
+
+- (void)setErrorMessage:(NSString *)message
+{
+    _errorField.stringValue = message ?: @"";
+    _errorField.toolTip = message.length ? message : nil;
+    self.needsLayout = YES;
+}
+
+- (NSSize)configureForStyle:(enum modal_style)style availableHeight:(CGFloat)height
+{
+    struct modal_rename_layout base = modal_style_rename_layout_for(style, 0, height);
+    CGFloat width = base.error.size.width;
+    _errorField.preferredMaxLayoutWidth = width;
+    _errorHeight = self.errorMessage.length
+                 ? ceil([_errorField.cell cellSizeForBounds:NSMakeRect(0, 0, width, CGFLOAT_MAX)].height) : 0;
+    _geometry = modal_style_rename_layout_for(style, _errorHeight, height);
+    self.needsLayout = YES;
+    return NSSizeFromCGSize(_geometry.size);
+}
+
+- (void)updateFocus
+{
+    _nameField.layer.borderColor = (_nameField.currentEditor ? NSColor.controlAccentColor : NSColor.separatorColor).CGColor;
+}
+
+- (void)layout
+{
+    [super layout];
+    _nameField.frame = NSRectFromCGRect(_geometry.input);
+    _saveButton.frame = NSRectFromCGRect(_geometry.save);
+    _cancelButton.frame = NSRectFromCGRect(_geometry.cancel);
+    _errorScroll.hidden = !self.errorMessage.length;
+    _errorScroll.frame = NSRectFromCGRect(_geometry.error);
+    _errorField.frame = NSMakeRect(0, 0, _geometry.error.size.width, MAX(1.0f, _errorHeight));
+    CGFloat top = _errorField.isFlipped ? 0 : MAX(0, _errorHeight - _errorScroll.contentView.bounds.size.height);
+    [_errorScroll.contentView scrollToPoint:NSMakePoint(0, top)];
+    [_errorScroll reflectScrolledClipView:_errorScroll.contentView];
+    [self updateFocus];
 }
 @end

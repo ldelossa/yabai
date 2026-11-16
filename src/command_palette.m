@@ -276,10 +276,10 @@ void command_palette_handle_message(FILE *rsp, char *message)
     }
 }
 
-#define COMMAND_PALETTE_WIDTH 650.0f
-#define COMMAND_PALETTE_LIST_HEIGHT 400.0f
-#define COMMAND_PALETTE_INPUT_HEIGHT 300.0f
-#define COMMAND_PALETTE_CONFIRM_HEIGHT 236.0f
+#define COMMAND_PALETTE_INPUT_HEIGHT 180.0f
+#define COMMAND_PALETTE_COMPACT_INPUT_HEIGHT 150.0f
+#define COMMAND_PALETTE_CONFIRM_HEIGHT 140.0f
+#define COMMAND_PALETTE_EMPTY_HEIGHT 150.0f
 
 enum command_palette_view_state
 {
@@ -307,6 +307,7 @@ enum command_palette_content
     command_palette_panel *_panel;
     NSView *_listView;
     NSView *_detailView;
+    native_palette_rename_view *_renameView;
     NSSearchField *_searchField;
     NSTableView *_tableView;
     NSMutableArray *_filteredActions;
@@ -315,6 +316,7 @@ enum command_palette_content
     NSMutableArray *_enumTokens;
     NSTextField *_sectionField;
     NSTextField *_footerField;
+    NSTextField *_emptyField;
     NSButton *_backButton;
     NSTextField *_breadcrumbField;
     NSTextField *_detailTitleField;
@@ -570,15 +572,12 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 - (NSImageView *)keyIconWithSymbolName:(NSString *)symbolName
 {
     NSImage *image = [NSImage imageWithSystemSymbolName:symbolName accessibilityDescription:nil];
-    image = [image imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:13.0f weight:NSFontWeightMedium]];
+    image = [image imageWithSymbolConfiguration:[NSImageSymbolConfiguration configurationWithPointSize:11.0f weight:NSFontWeightRegular]];
 
-    NSSize natural = image.size;
-    CGFloat width = MAX(14.0f, ceil(natural.width));
-
-    NSImageView *view = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, width, 18)];
+    NSImageView *view = [[NSImageView alloc] initWithFrame:NSMakeRect(0, 0, 13.0f, 13.0f)];
     view.image = image;
     view.imageScaling = NSImageScaleProportionallyDown;
-    view.contentTintColor = NSColor.secondaryLabelColor;
+    view.contentTintColor = NSColor.tertiaryLabelColor;
     return view;
 }
 
@@ -587,39 +586,43 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
                    text:(NSString *)text
                     atX:(CGFloat *)x
 {
+    CGFloat iconSize = 13.0f;
+    CGFloat barHeight = bar.frame.size.height;
     for (NSString *symbolName in symbolNames) {
         NSImageView *icon = [self keyIconWithSymbolName:symbolName];
-        icon.frame = NSMakeRect(*x, 0, icon.frame.size.width, bar.frame.size.height);
+        icon.frame = NSMakeRect(*x, floor((barHeight - iconSize) / 2.0f), iconSize, iconSize);
         [bar addSubview:icon];
         [icon release];
-        *x += icon.frame.size.width + 4.0f;
+        *x += iconSize + 3.0f;
     }
 
     if (text.length) {
         NSTextField *label = [NSTextField labelWithString:text];
-        label.font = [NSFont systemFontOfSize:11.0f];
-        label.textColor = NSColor.secondaryLabelColor;
+        label.font = [NSFont systemFontOfSize:10.0f];
+        label.textColor = NSColor.tertiaryLabelColor;
         [label sizeToFit];
-        label.frame = NSMakeRect(*x, 0, label.frame.size.width, bar.frame.size.height);
+        label.frame = NSMakeRect(*x, 0, label.frame.size.width, barHeight);
         [bar addSubview:label];
-        *x += label.frame.size.width + 16.0f;
+        *x += label.frame.size.width + 12.0f;
     }
 }
 
 - (void)setRightHintForBar:(NSView *)bar keySymbolName:(NSString *)symbolName text:(NSString *)text
 {
+    CGFloat iconSize = 13.0f;
+    CGFloat barHeight = bar.frame.size.height;
     NSImageView *icon = [self keyIconWithSymbolName:symbolName];
     NSTextField *label = [NSTextField labelWithString:text];
-    label.font = [NSFont systemFontOfSize:11.0f];
-    label.textColor = NSColor.secondaryLabelColor;
+    label.font = [NSFont systemFontOfSize:10.0f];
+    label.textColor = NSColor.tertiaryLabelColor;
     [label sizeToFit];
 
-    CGFloat total = icon.frame.size.width + 4.0f + label.frame.size.width;
+    CGFloat total = iconSize + 3.0f + label.frame.size.width;
     CGFloat x = bar.frame.size.width - total;
-    icon.frame = NSMakeRect(x, 0, icon.frame.size.width, bar.frame.size.height);
+    icon.frame = NSMakeRect(x, floor((barHeight - iconSize) / 2.0f), iconSize, iconSize);
     [bar addSubview:icon];
     [icon release];
-    label.frame = NSMakeRect(x + icon.frame.size.width + 4.0f, 0, label.frame.size.width, bar.frame.size.height);
+    label.frame = NSMakeRect(x + iconSize + 3.0f, 0, label.frame.size.width, barHeight);
     [bar addSubview:label];
 }
 
@@ -659,7 +662,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 {
     if (_panel) return;
 
-    _panel = [[command_palette_panel alloc] initWithContentRect:NSMakeRect(0, 0, COMMAND_PALETTE_WIDTH, COMMAND_PALETTE_LIST_HEIGHT)
+    _panel = [[command_palette_panel alloc] initWithContentRect:NSMakeRect(0, 0, modal_style_panel_width(), 400.0f)
                                                       styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
                                                         backing:NSBackingStoreBuffered
                                                           defer:NO];
@@ -677,13 +680,13 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     _panel.level = NSStatusWindowLevel;
     _panel.acceptsMouseMovedEvents = YES;
 
-    NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, COMMAND_PALETTE_WIDTH, COMMAND_PALETTE_LIST_HEIGHT)];
+    NSView *root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, modal_style_panel_width(), 400.0f)];
     root.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     if (@available(macOS 27.0, *)) {
         NSGlassEffectView *glass = [[NSGlassEffectView alloc] initWithFrame:root.bounds];
         glass.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         glass.style = NSGlassEffectViewStyleRegular;
-        glass.cornerRadius = 18.0f;
+        glass.cornerRadius = 12.0f;
         glass.clipsToBounds = YES;
         glass.effectIsInteractive = YES;
         glass.contentView = root;
@@ -707,7 +710,8 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 
     _searchField = [[NSSearchField alloc] initWithFrame:NSMakeRect(14, 348, 622, 36)];
     _searchField.placeholderString = @"Search Yabai actions…";
-    _searchField.font = [NSFont systemFontOfSize:15.0f];
+    _searchField.font = [NSFont systemFontOfSize:13.0f];
+    _searchField.focusRingType = NSFocusRingTypeNone;
     _searchField.delegate = self;
     [_listView addSubview:_searchField];
 
@@ -737,16 +741,11 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 
     _tableView = [[NSTableView alloc] initWithFrame:scroll.bounds];
     NSTableColumn *column = [[NSTableColumn alloc] initWithIdentifier:@"action"];
-    column.width = 634.0f;
+    column.width = modal_style_panel_width() - 6.0f;
     column.resizingMask = NSTableColumnAutoresizingMask;
     [_tableView addTableColumn:column];
     [column release];
-    _tableView.headerView = nil;
-    _tableView.backgroundColor = NSColor.clearColor;
-    _tableView.rowHeight = 44.0f;
-    _tableView.intercellSpacing = NSMakeSize(0, 1);
-    _tableView.columnAutoresizingStyle = NSTableViewUniformColumnAutoresizingStyle;
-    _tableView.selectionHighlightStyle = NSTableViewSelectionHighlightStyleNone;
+    native_palette_configure_table(_tableView);
     _tableView.delegate = self;
     _tableView.dataSource = self;
     _tableView.target = self;
@@ -766,8 +765,16 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
                                   value:@""
                                    font:[NSFont systemFontOfSize:11.0f]
                                   color:NSColor.tertiaryLabelColor];
+    _footerField.selectable = YES;
     _footerField.hidden = YES;
     [_listView addSubview:_footerField];
+
+    _emptyField = [self labelWithFrame:NSZeroRect
+                                 value:@"No matching results."
+                                  font:[NSFont systemFontOfSize:12.0f]
+                                 color:NSColor.secondaryLabelColor];
+    _emptyField.hidden = YES;
+    [_listView addSubview:_emptyField];
 
     _listFooterBar = [[NSView alloc] initWithFrame:NSMakeRect(14, 12, 622, 18)];
     [_listView addSubview:_listFooterBar];
@@ -832,6 +839,16 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     _detailFooterBar = [[NSView alloc] initWithFrame:NSMakeRect(22, 16, 606, 18)];
     [_detailView addSubview:_detailFooterBar];
     [_detailFooterBar release];
+
+    _renameView = [[[native_palette_rename_view alloc] initWithFrame:root.bounds] autorelease];
+    _renameView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _renameView.hidden = YES;
+    [_renameView setEditingDelegate:self];
+    _renameView.saveButton.target = self;
+    _renameView.saveButton.action = @selector(runPendingAction:);
+    _renameView.cancelButton.target = self;
+    _renameView.cancelButton.action = @selector(cancelPalette:);
+    [root addSubview:_renameView];
 
     [root release];
     [self filterActions];
@@ -933,48 +950,129 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     if (_filteredActions.count) {
         [self selectPaletteRow:0];
         [self ensurePaletteRowVisible:0];
+        _emptyField.hidden = YES;
     } else {
         [self selectPaletteRow:-1];
+        _emptyField.hidden = NO;
     }
     if (_listFooterBar) [self rebuildListFooter];
+}
+
+- (CGFloat)paletteMargin
+{
+    return modal_style_current() == MODAL_STYLE_COMPACT ? 10.0f : 12.0f;
+}
+
+- (CGFloat)paletteSearchHeight
+{
+    return modal_style_current() == MODAL_STYLE_COMPACT ? 30.0f : 34.0f;
+}
+
+- (CGFloat)listChromeHeight
+{
+    // Fixed vertical space outside the scrolling list: top margin + search +
+    // section label + footer plus their gaps.
+    return [self paletteMargin] + [self paletteSearchHeight] + 54.0f;
+}
+
+- (void)layoutListViewWithHeight:(CGFloat)height
+{
+    CGFloat width = modal_style_panel_width();
+    bool compact = modal_style_current() == MODAL_STYLE_COMPACT;
+    CGFloat margin = [self paletteMargin];
+    CGFloat searchHeight = [self paletteSearchHeight];
+    CGFloat sectionHeight = 12.0f;
+    CGFloat footerHeight = 18.0f;
+
+    _tableView.rowHeight = modal_style_row_height();
+
+    CGFloat searchTop = height - margin;
+    _searchField.frame = NSMakeRect(margin, searchTop - searchHeight, width - 2.0f * margin, searchHeight);
+    _searchField.font = [NSFont systemFontOfSize:compact ? 12.0f : 13.0f];
+
+    _backButton.frame = NSMakeRect(margin + 2.0f, searchTop - searchHeight + (searchHeight - 26.0f) / 2.0f, 26.0f, 26.0f);
+
+    _sectionField.frame = NSMakeRect(margin + 4.0f, searchTop - searchHeight - 4.0f - sectionHeight, width - 2.0f * margin, sectionHeight);
+
+    CGFloat footerY = 8.0f;
+    _listFooterBar.frame = NSMakeRect(margin, footerY, width - 2.0f * margin, footerHeight);
+    _footerField.frame = _listFooterBar.frame;
+
+    CGFloat listBottom = footerY + footerHeight + 4.0f;
+    CGFloat listTop = searchTop - searchHeight - 8.0f - sectionHeight - 4.0f;
+    NSScrollView *scroll = _tableView.enclosingScrollView;
+    CGFloat listHeight = MAX(1.0f, listTop - listBottom);
+    scroll.frame = NSMakeRect(6.0f, listBottom, width - 12.0f, listHeight);
+
+    // Pin the table view (the document view) to its content so the clip view
+    // shows every row edge-to-edge instead of clipping the last row.
+    NSClipView *clip = scroll.contentView;
+    CGFloat contentHeight = MAX(1.0f, (CGFloat)_filteredActions.count * modal_style_row_height());
+    CGFloat contentWidth = clip ? clip.bounds.size.width : (width - 12.0f);
+    _tableView.frame = NSMakeRect(0, 0, contentWidth, contentHeight);
+
+    _emptyField.frame = NSMakeRect(margin, listBottom + 6.0f, width - 2.0f * margin, 18.0f);
+}
+
+- (BOOL)isRenameInput
+{
+    return _state == COMMAND_PALETTE_VIEW_INPUT && _pendingAction &&
+           _pendingAction->kind == COMMAND_PALETTE_ACTION_NATIVE &&
+           _pendingAction->native_action == COMMAND_PALETTE_NATIVE_SPACE_RELABEL;
+}
+
+- (CGFloat)detailViewHeight
+{
+    if (_state == COMMAND_PALETTE_VIEW_CONFIRMATION) return COMMAND_PALETTE_CONFIRM_HEIGHT;
+    return _detailDescriptionField.stringValue.length ? COMMAND_PALETTE_INPUT_HEIGHT : COMMAND_PALETTE_COMPACT_INPUT_HEIGHT;
 }
 
 - (void)layoutDetailView
 {
     if (_state == COMMAND_PALETTE_VIEW_LIST) return;
 
-    CGFloat height = _state == COMMAND_PALETTE_VIEW_CONFIRMATION
-                   ? COMMAND_PALETTE_CONFIRM_HEIGHT
-                   : COMMAND_PALETTE_INPUT_HEIGHT;
+    CGFloat height = [self detailViewHeight];
+    CGFloat width = modal_style_panel_width();
+    bool compact = modal_style_current() == MODAL_STYLE_COMPACT;
+    CGFloat margin = compact ? 19.0f : 22.0f;
 
-    _breadcrumbField.frame = NSMakeRect(22, height - 38, 606, 16);
-    _detailTitleField.frame = NSMakeRect(22, height - 72, 606, 28);
-    _detailIdField.frame = NSMakeRect(22, height - 94, 606, 18);
-    _detailDescriptionField.frame = NSMakeRect(22, height - 132, 606, 34);
+    _breadcrumbField.hidden = YES;
+    _detailIdField.hidden = YES;
+    _detailFooterBar.hidden = YES;
+
+    _detailTitleField.frame = NSMakeRect(margin, height - 44.0f, width - 2.0f * margin, 24.0f);
+    _detailTitleField.font = [NSFont systemFontOfSize:compact ? 16.0f : 17.0f weight:NSFontWeightSemibold];
+    _detailDescriptionField.toolTip = _detailDescriptionField.stringValue.length ? _detailDescriptionField.stringValue : nil;
 
     if (_state == COMMAND_PALETTE_VIEW_CONFIRMATION) {
+        _detailDescriptionField.hidden = NO;
+        _detailDescriptionField.frame = NSMakeRect(margin, height - 82.0f, width - 2.0f * margin, 34.0f);
+        _detailDescriptionField.maximumNumberOfLines = 2;
         _argumentLabelField.hidden = YES;
         _argumentField.hidden = YES;
     } else {
+        bool hasHelper = _detailDescriptionField.stringValue.length > 0;
+        _detailDescriptionField.hidden = !hasHelper;
         _argumentLabelField.hidden = NO;
         _argumentField.hidden = NO;
-        _argumentLabelField.frame = NSMakeRect(22, height - 152, 606, 16);
-        _argumentField.frame = NSMakeRect(22, height - 202, 606, 40);
+
+        if (hasHelper) {
+            _detailDescriptionField.frame = NSMakeRect(margin, height - 76.0f, width - 2.0f * margin, 18.0f);
+            _detailDescriptionField.maximumNumberOfLines = 1;
+            _argumentField.frame = NSMakeRect(margin, height - 122.0f, width - 2.0f * margin, 32.0f);
+            _argumentLabelField.frame = NSMakeRect(margin, height - 142.0f, width - 2.0f * margin, 14.0f);
+        } else {
+            _argumentField.frame = NSMakeRect(margin, height - 92.0f, width - 2.0f * margin, 32.0f);
+            _argumentLabelField.frame = NSMakeRect(margin, height - 112.0f, width - 2.0f * margin, 14.0f);
+        }
     }
 
-    _cancelButton.frame = NSMakeRect(460, 48, 78, 32);
-    _runButton.frame = NSMakeRect(546, 48, 82, 32);
-    _detailFooterBar.frame = NSMakeRect(22, 16, 606, 18);
+    _cancelButton.frame = NSMakeRect(width - margin - 150.0f, 18.0f, 70.0f, 28.0f);
+    _runButton.frame = NSMakeRect(width - margin - 74.0f, 18.0f, 74.0f, 28.0f);
 }
 
 - (void)resizePanelForState
 {
-    [self layoutDetailView];
-
-    CGFloat height = _state == COMMAND_PALETTE_VIEW_LIST ? COMMAND_PALETTE_LIST_HEIGHT
-                   : _state == COMMAND_PALETTE_VIEW_CONFIRMATION ? COMMAND_PALETTE_CONFIRM_HEIGHT
-                   : COMMAND_PALETTE_INPUT_HEIGHT;
-
     NSPoint mouse = NSEvent.mouseLocation;
     NSScreen *screen = NSScreen.mainScreen;
     for (NSScreen *candidate in NSScreen.screens) {
@@ -983,14 +1081,41 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
             break;
         }
     }
-
     NSRect visible = screen.visibleFrame;
+
+    CGFloat width = modal_style_panel_width();
+    CGFloat height;
+    BOOL rename = [self isRenameInput];
+    if (rename) {
+        NSSize size = [_renameView configureForStyle:modal_style_current() availableHeight:visible.size.height];
+        width = size.width;
+        height = size.height;
+    } else if (_state == COMMAND_PALETTE_VIEW_LIST) {
+        size_t count = _filteredActions.count;
+        if (count == 0) {
+            height = MIN(COMMAND_PALETTE_EMPTY_HEIGHT, MAX(120.0f, visible.size.height - 64.0f));
+        } else {
+            height = modal_style_list_height(count, [self listChromeHeight], visible.size.height);
+        }
+        [self layoutListViewWithHeight:height];
+    } else {
+        height = [self detailViewHeight];
+        [self layoutDetailView];
+    }
+
     NSRect frame = _panel.frame;
-    frame.size.width = COMMAND_PALETTE_WIDTH;
+    frame.size.width = width;
     frame.size.height = height;
-    frame.origin.x = NSMidX(visible) - frame.size.width / 2.0f;
-    frame.origin.y = NSMidY(visible) - frame.size.height / 2.0f + 40.0f;
+    frame.origin.x = NSMidX(visible) - width / 2.0f;
+    frame.origin.y = NSMidY(visible) - height / 2.0f + 40.0f;
     [_panel setFrame:frame display:YES];
+    if (rename) {
+        // Finish parent resizing before laying out the small controls. Do not
+        // leave them positioned using a previous form's width/height.
+        [_panel.contentView layoutSubtreeIfNeeded];
+        _renameView.frame = NSMakeRect(0, 0, width, height);
+        [_renameView layoutSubtreeIfNeeded];
+    }
 }
 
 - (const struct command_palette_action *)selectedAction
@@ -1070,6 +1195,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     [_pendingArgument release];
     _pendingArgument = nil;
     _hoveredRow = -1;
+    _renameView.hidden = YES;
     _detailView.hidden = YES;
     _listView.hidden = NO;
     _footerField.hidden = YES;
@@ -1081,18 +1207,21 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 
 - (void)showInputForAction:(const struct command_palette_action *)action
 {
+    _renameView.hidden = YES;
     _state = COMMAND_PALETTE_VIEW_INPUT;
     _pendingAction = action;
     _listView.hidden = YES;
     _detailView.hidden = NO;
-    _breadcrumbField.stringValue = @"Yabai Actions  ›  Argument";
     _detailTitleField.stringValue = [NSString stringWithUTF8String:action->title];
-    _detailIdField.stringValue = [NSString stringWithUTF8String:action->identifier];
-    _detailDescriptionField.stringValue = [NSString stringWithUTF8String:action->description];
-    _argumentLabelField.stringValue = [NSString stringWithFormat:@"Argument  ·  %s", action->syntax ?: "text"];
+    _detailDescriptionField.stringValue = action->description ? [NSString stringWithUTF8String:action->description] : @"";
+    _argumentLabelField.stringValue = @"";
+    _argumentLabelField.textColor = NSColor.secondaryLabelColor;
     _argumentField.stringValue = @"";
     _argumentField.placeholderString = action->argument_mode == COMMAND_PALETTE_ARGUMENT_OPTIONAL ? @"Optional argument…" : @"Enter argument…";
+    _argumentField.toolTip = action->syntax ? [NSString stringWithFormat:@"Syntax: %s", action->syntax] : nil;
     _runButton.title = @"Run";
+    _runButton.keyEquivalent = @"\r";
+    _cancelButton.keyEquivalent = @"";
     [self rebuildDetailFooter];
     [self resizePanelForState];
     [_panel makeFirstResponder:_argumentField];
@@ -1100,6 +1229,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 
 - (void)showScratchpadLabelInput
 {
+    _renameView.hidden = YES;
     const struct command_palette_action *action = command_palette_find_action("window.scratchpad-add");
     if (!action) return;
 
@@ -1109,14 +1239,16 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     _scratchpadCreatePrompt = true;
     _listView.hidden = YES;
     _detailView.hidden = NO;
-    _breadcrumbField.stringValue = @"Yabai Actions  ›  New Scratch Stack";
     _detailTitleField.stringValue = @"New Scratch Stack";
-    _detailIdField.stringValue = @"window.scratchpad-add";
-    _detailDescriptionField.stringValue = @"No scratch stack exists yet. Enter a label for the new stack.";
-    _argumentLabelField.stringValue = @"Label";
+    _detailDescriptionField.stringValue = @"Adds the focused window to this stack.";
+    _argumentLabelField.stringValue = @"";
+    _argumentLabelField.textColor = NSColor.secondaryLabelColor;
     _argumentField.stringValue = @COMMAND_PALETTE_DEFAULT_SCRATCHPAD_LABEL;
     _argumentField.placeholderString = @"Scratch stack label…";
+    _argumentField.toolTip = nil;
     _runButton.title = @"Create & Add";
+    _runButton.keyEquivalent = @"\r";
+    _cancelButton.keyEquivalent = @"";
     [self rebuildDetailFooter];
     [self resizePanelForState];
     [_panel makeFirstResponder:_argumentField];
@@ -1124,20 +1256,29 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 
 - (void)showConfirmationForAction:(const struct command_palette_action *)action argument:(NSString *)argument
 {
+    _renameView.hidden = YES;
     _state = COMMAND_PALETTE_VIEW_CONFIRMATION;
     _pendingAction = action;
     [_pendingArgument release];
     _pendingArgument = [argument copy];
     _listView.hidden = YES;
     _detailView.hidden = NO;
-    _breadcrumbField.stringValue = @"Yabai Actions  ›  Confirmation";
-    _detailTitleField.stringValue = [NSString stringWithFormat:@"Confirm %@?", [NSString stringWithUTF8String:action->title]];
-    _detailIdField.stringValue = [NSString stringWithUTF8String:action->identifier];
-    _detailDescriptionField.stringValue = [NSString stringWithFormat:@"%@ This action cannot be undone.", [NSString stringWithUTF8String:action->description]];
-    _runButton.title = @"Confirm";
+    _detailTitleField.stringValue = [NSString stringWithFormat:@"%s?", action->title];
+    {
+        NSString *consequence = action->description ? [NSString stringWithUTF8String:action->description] : @"";
+        _detailDescriptionField.stringValue = [consequence stringByAppendingString:@" This cannot be undone."];
+    }
+    _argumentLabelField.stringValue = @"";
+
+    // Name the destructive action instead of a generic Confirm, and keep Cancel
+    // as the safe default (Return cancels; the destructive button has no Return key).
+    NSString *verb = [[[NSString stringWithUTF8String:action->title] componentsSeparatedByString:@" "] firstObject];
+    _runButton.title = verb.length ? verb : @"Confirm";
+    _runButton.keyEquivalent = @"";
+    _cancelButton.keyEquivalent = @"\r";
     [self rebuildDetailFooter];
     [self resizePanelForState];
-    [_panel makeFirstResponder:_runButton];
+    [_panel makeFirstResponder:_cancelButton];
 }
 
 - (void)activateAction:(const struct command_palette_action *)action
@@ -1205,7 +1346,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     if (!_pendingAction) return;
 
     if (_state == COMMAND_PALETTE_VIEW_INPUT) {
-        NSString *argument = _argumentField.stringValue;
+        NSString *argument = [self isRenameInput] ? _renameView.nameField.stringValue : _argumentField.stringValue;
         if ((_scratchpadCreatePrompt || _pendingAction->argument_mode == COMMAND_PALETTE_ARGUMENT_REQUIRED) && !argument.length) {
             _argumentLabelField.stringValue = _scratchpadCreatePrompt ? @"Label required" : [NSString stringWithFormat:@"Argument required  ·  %s", _pendingAction->syntax ?: "text"];
             _argumentLabelField.textColor = NSColor.systemRedColor;
@@ -1464,7 +1605,6 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     _pickerKind = COMMAND_PALETTE_PICKER_NONE;
     _pickerFocusedWid = 0;
     _backButton.hidden = YES;
-    _searchField.frame = NSMakeRect(14, 348, 622, 36);
     _searchField.placeholderString = @"Search Yabai actions…";
     _sectionField.stringValue = @"ACTIONS";
     _searchField.stringValue = @"";
@@ -1559,18 +1699,28 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
         const struct command_palette_action *action = command_palette_find_action("space.relabel");
         if (!action) return;
 
-        [self showInputForAction:action];
-        _breadcrumbField.stringValue = @"Yabai Actions  ›  Space  ›  Relabel";
-        _argumentLabelField.stringValue = [NSString stringWithFormat:@"Label  ·  focused space %d", focusedIndex];
-        _argumentLabelField.textColor = NSColor.secondaryLabelColor;
-        _argumentField.stringValue = snapshot->focused_label ? [NSString stringWithUTF8String:snapshot->focused_label] : @"";
-        _argumentField.placeholderString = @"Empty removes the current label";
-        _runButton.title = @"Save";
-        [self rebuildDetailFooter];
+        _state = COMMAND_PALETTE_VIEW_INPUT;
+        _pendingAction = action;
+        _scratchpadCreatePrompt = false;
+        _listView.hidden = YES;
+        _detailView.hidden = YES;
+        _renameView.hidden = NO;
+        NSString *name = snapshot->focused_label && *snapshot->focused_label
+                       ? [NSString stringWithUTF8String:snapshot->focused_label]
+                       : [NSString stringWithFormat:@"Space %d", focusedIndex];
+        _renameView.toolTip = [NSString stringWithFormat:@"Rename “%@”", name];
+        _renameView.nameField.stringValue = snapshot->focused_label ? [NSString stringWithUTF8String:snapshot->focused_label] : @"";
+        _renameView.errorMessage = @"";
+        [self resizePanelForState];
     }
 
     [_panel makeKeyAndOrderFront:nil];
     [_panel orderFrontRegardless];
+    if ([self isRenameInput]) {
+        [_panel makeFirstResponder:_renameView.nameField];
+        [_renameView.nameField selectText:nil];
+        [_renameView updateFocus];
+    }
 }
 
 - (void)showSpaceResult:(NSString *)message success:(bool)success closePanel:(bool)closePanel
@@ -1581,7 +1731,12 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
         return;
     }
 
-    if (_state == COMMAND_PALETTE_VIEW_INPUT) {
+    if ([self isRenameInput]) {
+        _renameView.errorMessage = message.length ? message : @"The space action failed.";
+        [self resizePanelForState];
+        [_panel makeFirstResponder:_renameView.nameField];
+        [_renameView updateFocus];
+    } else if (_state == COMMAND_PALETTE_VIEW_INPUT) {
         _argumentLabelField.stringValue = message.length ? message : @"The space action failed.";
         _argumentLabelField.textColor = success ? NSColor.systemGreenColor : NSColor.systemRedColor;
         [_panel makeFirstResponder:_argumentField];
@@ -1589,6 +1744,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
         _listFooterBar.hidden = YES;
         _footerField.hidden = NO;
         _footerField.stringValue = message.length ? message : success ? @"Action completed." : @"Action failed.";
+        _footerField.toolTip = message.length ? message : nil;
         _footerField.textColor = success ? NSColor.systemGreenColor : NSColor.systemRedColor;
     }
 }
@@ -1605,6 +1761,7 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
     _listFooterBar.hidden = YES;
     _footerField.hidden = NO;
     _footerField.stringValue = output.length ? output : success ? @"Action completed." : @"Action failed.";
+    _footerField.toolTip = output.length ? output : nil;
     _footerField.textColor = success ? NSColor.systemGreenColor : NSColor.systemRedColor;
 }
 
@@ -1698,6 +1855,20 @@ static void command_palette_execute_scratchpad_hide(FILE *rsp, bool from_ui, cha
 - (void)controlTextDidChange:(NSNotification *)notification
 {
     if (notification.object == _searchField) [self filterActions];
+    if ([self isRenameInput] && notification.object == _renameView.nameField && _renameView.errorMessage.length) {
+        _renameView.errorMessage = @"";
+        [self resizePanelForState];
+    }
+}
+
+- (void)controlTextDidBeginEditing:(NSNotification *)notification
+{
+    if (notification.object == _renameView.nameField) [_renameView updateFocus];
+}
+
+- (void)controlTextDidEndEditing:(NSNotification *)notification
+{
+    if (notification.object == _renameView.nameField) [_renameView updateFocus];
 }
 
 - (BOOL)control:(NSControl *)control
@@ -1731,7 +1902,8 @@ doCommandBySelector:(SEL)commandSelector
         return YES;
     }
 
-    if (control == _argumentField && commandSelector == @selector(insertNewline:)) {
+    if ((control == _argumentField || ([self isRenameInput] && control == _renameView.nameField)) &&
+        commandSelector == @selector(insertNewline:)) {
         [self runPendingAction:control];
         return YES;
     }
