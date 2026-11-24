@@ -113,11 +113,25 @@ static inline bool status_island_point_in_top_band(CGPoint p, status_island_geom
     return p.y >= g.screen_top_y - g.notch_height && p.y <= g.screen_top_y;
 }
 
+// The screen's top row is a hover-only continuation of the visible island.
+// Cocoa's maximum-Y boundary is not part of CGRectContainsPoint, so a cursor
+// thrown to that edge would otherwise collapse the island above either wing.
+// This does not expand any panel's clickable frame or the horizontal hover span.
+static inline bool status_island_point_in_top_edge_hover(CGPoint p, status_island_geometry g)
+{
+    CGRect visible = status_island_visible_frame(g);
+    return p.x >= CGRectGetMinX(visible) && p.x < CGRectGetMaxX(visible) &&
+           p.y >= g.screen_top_y - 1.0 && p.y <= g.screen_top_y;
+}
+
 // Collapse at the visible left/right edge: inside the top strip but outside
-// the visible surface. Callers still apply on-display and open-menu protection.
+// both the visible surface and its top-edge hover continuation. Callers still
+// apply on-display and open-menu protection.
 static inline bool status_island_should_collapse_for_point(CGPoint p, status_island_geometry g)
 {
-    return status_island_point_in_top_band(p, g) && !status_island_point_in_visible_surface(p, g);
+    return status_island_point_in_top_band(p, g) &&
+           !status_island_point_in_visible_surface(p, g) &&
+           !status_island_point_in_top_edge_hover(p, g);
 }
 
 #endif /* STATUS_ISLAND_GEOMETRY_H */

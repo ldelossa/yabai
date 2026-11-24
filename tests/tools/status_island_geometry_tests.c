@@ -130,6 +130,37 @@ static void test_visible_edge_collapse(void)
     CHECK(status_island_should_collapse_for_point(old_dead_zone_right, g), "right margin collapses immediately");
 }
 
+static void test_top_edge_hover_only_within_visible_width(void)
+{
+    status_island_geometry g = historical();
+    CGRect visible = status_island_visible_frame(g);
+    double left = CGRectGetMinX(visible);
+    double right = CGRectGetMaxX(visible);
+    double top = g.screen_top_y;
+
+    CHECK(!status_island_should_collapse_for_point(CGPointMake(left + 10.0, top), g),
+          "top edge above left wing stays expanded");
+    CHECK(!status_island_should_collapse_for_point(CGPointMake(right - 10.0, top), g),
+          "top edge above right wing stays expanded");
+    CHECK(!status_island_should_collapse_for_point(CGPointMake(left + 0.5, top - 0.5), g),
+          "top screen row inside visible width stays expanded");
+    CHECK(status_island_should_collapse_for_point(CGPointMake(left - 0.5, top), g),
+          "top edge just left of visible width collapses");
+    CHECK(status_island_should_collapse_for_point(CGPointMake(right, top), g),
+          "top edge at right boundary collapses");
+    CHECK(status_island_should_collapse_for_point(CGPointMake(right + 0.5, top), g),
+          "top edge just right of visible width collapses");
+    CHECK(status_island_should_collapse_for_point(CGPointMake(left - 27.0, top), g),
+          "shadow margin at top edge still collapses");
+
+    g.collapsed = true;
+    visible = status_island_visible_frame(g);
+    CHECK(!status_island_should_collapse_for_point(CGPointMake(CGRectGetMidX(visible), top), g),
+          "collapsed notch keeps its top-edge hover");
+    CHECK(status_island_should_collapse_for_point(CGPointMake(CGRectGetMinX(visible) - 1.0, top), g),
+          "collapsed wing outside the notch still collapses");
+}
+
 static void test_below_band_preserves_behavior(void)
 {
     status_island_geometry g = historical();
@@ -190,6 +221,7 @@ int main(void)
     test_margins_are_click_through();
     test_rounded_bottom_cutouts();
     test_visible_edge_collapse();
+    test_top_edge_hover_only_within_visible_width();
     test_below_band_preserves_behavior();
     test_zero_notch();
     test_display_origin_variations();

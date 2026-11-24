@@ -1171,12 +1171,10 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
     status_island_geometry g = [self geometry];
     CGPoint point = NSPointToCGPoint(mouse);
-    bool over_island = status_island_point_in_visible_surface(point, g);
     bool over_menu = (_workspace_menu && _workspace_menu.visible && NSPointInRect(mouse, _workspace_menu.frame)) ||
                      (_layout_menu && _layout_menu.visible && NSPointInRect(mouse, _layout_menu.frame));
-    bool in_island_band = status_island_point_in_top_band(point, g);
 
-    bool collapsed = on_display && in_island_band && !over_island && !over_menu;
+    bool collapsed = on_display && status_island_should_collapse_for_point(point, g) && !over_menu;
     [self setCollapsed:collapsed];
 }
 @end
