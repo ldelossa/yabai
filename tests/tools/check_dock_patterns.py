@@ -178,28 +178,60 @@ def inspect(binary, arch):
     return report
 
 
+def source_profiles():
+    """Read the exact profile rows declared by the runtime header."""
+    source = (ROOT / "src/osax/dock_27_3.h").read_text()
+    rows = source.split("sa_dock_27_3_profiles[]", 1)[1].split("};", 1)[0]
+    profiles = []
+    for prefix, build in re.findall(r'^#define (DOCK_27_3(?:_BETA\d+)?)_BUILD "([^"]+)"', source, re.MULTILINE):
+        if prefix + "_BUILD" not in rows:
+            raise ValueError("Profile macros have no runtime row")
+        def number(field):
+            match = re.search(r"#define " + prefix + "_" + field + r" (0x[0-9a-fA-F]+)U?\b", source)
+            if not match:
+                raise ValueError("Incomplete profile " + prefix)
+            return int(match[1], 16)
+        identity = re.search(r'#define ' + prefix + r'_UUID "([^"]+)"', source)
+        if not identity:
+            raise ValueError("Missing profile UUID")
+        profiles.append(dict(build=build, uuid=str(uuid.UUID(identity[1])), subtype=number("SUBTYPE"),
+                             offsets={name: number(name.upper() + "_OFFSET") for name in CORE},
+                             pointer_slot=number("POINTER_SLOT_OFFSET")))
+    if not profiles:
+        raise ValueError("No runtime profiles")
+    return profiles
+
+
 def check_core(report):
-    """Require a runtime profile, not just a plausible set of byte matches."""
-    header = ROOT / "src/osax/dock_27_3.h"
-    if not header.exists():
-        return False
-    source = header.read_text()
-    expected = re.search(r'#define DOCK_27_3_UUID "([^"]+)"', source)
-    if not expected or report["uuid"].lower() != expected[1].lower() or report["arch"] != "arm64e":
-        return False
-    for name in CORE:
-        match = re.search(r"#define DOCK_27_3_" + name.upper() + r"_OFFSET (0x[0-9a-fA-F]+)", source)
-        entry = report["patterns"][name]
-        if not match or entry["count"] != 1 or int(entry["hits"][0]["relative_vmaddr"], 16) != int(match[1], 16):
+    """Require one exact profile, not just a plausible set of byte matches.
+
+    UUID identifies an offline binary; optional build adds the host-build check.
+    The runtime always requires build, version, UUID and subtype together.
+    """
+    try:
+        if report["arch"] != "arm64e":
             return False
-        hit = entry["hits"][0]
-        if name == "dock_spaces":
-            pointer = re.search(r"#define DOCK_27_3_POINTER_SLOT_OFFSET (0x[0-9a-fA-F]+)", source)
-            if not hit.get("pointer_writable") or not pointer or int(hit["pointer_slot"], 16) != int(pointer[1], 16):
+        matches = [p for p in source_profiles() if p["uuid"] == report["uuid"].lower() and
+                   hex(p["subtype"]) == report["subtype"] and
+                   ("build" not in report or p["build"] == report["build"])]
+        if len(matches) != 1:
+            return False
+        profile = matches[0]
+        for name in CORE:
+            entry = report["patterns"][name]
+            if entry["count"] != 1 or len(entry["hits"]) != 1:
                 return False
-        elif not hit["function_start"]:
-            return False
-    return True
+            hit = entry["hits"][0]
+            if int(hit["relative_vmaddr"], 16) != profile["offsets"][name]:
+                return False
+            if name == "dock_spaces":
+                if hit.get("pointer_writable") is not True or hit.get("pointer_segment") != "__DATA" or int(hit["pointer_slot"], 16) != profile["pointer_slot"]:
+                    return False
+            elif hit.get("function_start") is not True:
+                return False
+        return True
+    except (OSError, ValueError, KeyError, IndexError, TypeError):
+        return False
 
 
 def main():
@@ -207,10 +239,13 @@ def main():
     parser.add_argument("--binary", required=True)
     parser.add_argument("--arch", choices=ARCHES, default="arm64e")
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--build", help="Expected OS build; not derivable from a Mach-O UUID alone")
     parser.add_argument("--check-core", action="store_true")
     args = parser.parse_args()
     try:
         report = inspect(args.binary, args.arch)
+        if args.build is not None:
+            report["build"] = args.build
         output = json.dumps(report, indent=2) + "\n"
         if args.report:
             args.report.write_text(output)

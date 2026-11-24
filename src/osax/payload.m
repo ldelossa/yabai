@@ -323,21 +323,23 @@ static void init_dock_27_3(NSOperatingSystemVersion version)
     size_t build_size = sizeof(build);
     if (sysctlbyname("kern.osversion", build, &build_size, NULL, 0) != 0) return;
     build[sizeof(build) - 1] = '\0';
-    if (!sa_dock_27_3_matches(version.majorVersion, version.minorVersion, header->cpusubtype, build, uuid)) {
+    const struct sa_dock_27_3_profile *profile = sa_dock_27_3_profile_for(
+        version.majorVersion, version.minorVersion, header->cpusubtype, build, uuid);
+    if (!profile) {
         NSLog(@"[yabai-sa] no validated core profile for this macOS build / Dock UUID / architecture; capabilities disabled");
         return;
     }
 
     NSOperatingSystemVersion family = { .majorVersion = 26, .minorVersion = 5 };
     uint64_t baseaddr = static_base_address() + image_slide();
-    uint64_t global = dock_profile_pattern(baseaddr, get_dock_spaces_pattern(family), DOCK_27_3_DOCK_SPACES_OFFSET);
-    uint64_t add = dock_profile_pattern(baseaddr, get_add_space_pattern(family), DOCK_27_3_ADD_SPACE_OFFSET);
-    uint64_t remove = dock_profile_pattern(baseaddr, get_remove_space_pattern(family), DOCK_27_3_REMOVE_SPACE_OFFSET);
+    uint64_t global = dock_profile_pattern(baseaddr, get_dock_spaces_pattern(family), profile->dock_spaces_offset);
+    uint64_t add = dock_profile_pattern(baseaddr, get_add_space_pattern(family), profile->add_space_offset);
+    uint64_t remove = dock_profile_pattern(baseaddr, get_remove_space_pattern(family), profile->remove_space_offset);
     uint64_t slot = 0;
     const struct segment_command_64 *data = getsegbyname("__DATA");
     if (!global || !add || !remove || !data || !(data->initprot & VM_PROT_WRITE) ||
         !sa_decode_adrp_add((const uint8_t *)global, global, &slot) ||
-        slot != baseaddr + DOCK_27_3_POINTER_SLOT_OFFSET ||
+        slot != baseaddr + profile->pointer_slot_offset ||
         slot < data->vmaddr + image_slide() ||
         slot - (data->vmaddr + image_slide()) > data->vmsize ||
         sizeof(id) > data->vmsize - (slot - (data->vmaddr + image_slide()))) {
@@ -354,7 +356,7 @@ static void init_dock_27_3(NSOperatingSystemVersion version)
         dock_spaces = [candidate retain];
         add_space_fp = (uint64_t)ptrauth_sign_unauthenticated((void *)add, ptrauth_key_asia, 0);
         remove_space_fp = (uint64_t)ptrauth_sign_unauthenticated((void *)remove, ptrauth_key_asia, 0);
-        NSLog(@"[yabai-sa] validated 27.3 core profile enabled (0x0D); movement, privileged window focus, and animation patch disabled");
+        NSLog(@"[yabai-sa] validated 27.3 core profile %s enabled (0x0D); movement, privileged window focus, and animation patch disabled", profile->build);
     });
 }
 #endif

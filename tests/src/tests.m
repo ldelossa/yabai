@@ -42,6 +42,7 @@ typedef TEST_SIG(function);
     TEST_ENTRY(space_workflow_create_lifecycle)                 \
     TEST_ENTRY(osax_pattern_bounds_and_uniqueness)              \
     TEST_ENTRY(osax_profile_and_pointer_decode)                 \
+    TEST_ENTRY(osax_beta_profiles_are_strict)                    \
     TEST_ENTRY(osax_space_selector_and_storage_guards)          \
     TEST_ENTRY(osax_focus_list_ownership)                        \
     TEST_ENTRY(modal_style_width_metrics)                        \

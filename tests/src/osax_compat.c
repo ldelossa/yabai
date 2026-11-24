@@ -70,6 +70,47 @@ TEST_FUNC(osax_profile_and_pointer_decode, {
     TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_SUBTYPE, DOCK_27_3_BUILD, uuid), false);
 })
 
+TEST_FUNC(osax_beta_profiles_are_strict, {
+    uuid_t beta1;
+    uuid_t beta2;
+    uuid_parse(DOCK_27_3_UUID, beta1);
+    uuid_parse(DOCK_27_3_BETA2_UUID, beta2);
+    const struct sa_dock_27_3_profile *first = sa_dock_27_3_profile_for(27, 3, DOCK_27_3_SUBTYPE, DOCK_27_3_BUILD, beta1);
+    const struct sa_dock_27_3_profile *second = sa_dock_27_3_profile_for(27, 3, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2);
+    TEST_CHECK(first != NULL, true);
+    TEST_CHECK(second != NULL, true);
+    if (first && second) {
+        TEST_CHECK(first != second, true);
+        TEST_CHECK(first->add_space_offset == DOCK_27_3_ADD_SPACE_OFFSET, true);
+        TEST_CHECK(first->pointer_slot_offset == DOCK_27_3_POINTER_SLOT_OFFSET, true);
+        TEST_CHECK(second->dock_spaces_offset == DOCK_27_3_BETA2_DOCK_SPACES_OFFSET, true);
+        TEST_CHECK(second->add_space_offset == DOCK_27_3_BETA2_ADD_SPACE_OFFSET, true);
+        TEST_CHECK(second->remove_space_offset == DOCK_27_3_BETA2_REMOVE_SPACE_OFFSET, true);
+        TEST_CHECK(second->pointer_slot_offset == DOCK_27_3_BETA2_POINTER_SLOT_OFFSET, true);
+        TEST_CHECK(first->pointer_slot_offset != second->pointer_slot_offset, true);
+    }
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2), true);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_SUBTYPE, DOCK_27_3_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta1), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, 0x8000000c, DOCK_27_3_BETA2_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, 2, DOCK_27_3_BETA2_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 2, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 4, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(28, 3, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_BETA2_SUBTYPE, "future", beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_BETA2_SUBTYPE, NULL, beta2), false);
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, NULL), false);
+    beta2[0] ^= 1;
+    TEST_CHECK(sa_dock_27_3_matches(27, 3, DOCK_27_3_BETA2_SUBTYPE, DOCK_27_3_BETA2_BUILD, beta2), false);
+    uint32_t instructions[2];
+    instructions[0] = 0x90001868;
+    instructions[1] = 0x91020108;
+    uint64_t slot = 0;
+    TEST_CHECK(sa_decode_adrp_add((uint8_t *)instructions, 0x10002fcb8, &slot), true);
+    TEST_CHECK(slot == 0x10033b080, true);
+    TEST_CHECK(slot == 0x10033afd0, false);
+})
+
 TEST_FUNC(osax_focus_list_ownership, {
     __block CFArrayRef held_source = NULL;
     __block CFArrayRef held_destination = NULL;
