@@ -1,5 +1,7 @@
 #import <QuartzCore/QuartzCore.h>
 
+#include "status_island_geometry.h"
+
 extern struct event_loop g_event_loop;
 extern struct space_manager g_space_manager;
 
@@ -85,15 +87,47 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
         clipView.layer.mask = mask;
     }
 
+    CGPathRelease(path);
+
+    [_island performSelector:@selector(layoutWings)];
+}
+@end
+
+// Decoration-only surface owned by the mouse-transparent shadow panel. It
+// reproduces the island's shadow without also owning clicks or pointer events.
+@interface status_island_shadow_surface : NSView {
+    CGFloat _cornerRadius;
+}
+@property(assign) CGFloat cornerRadius;
+@end
+
+@implementation status_island_shadow_surface
+@synthesize cornerRadius = _cornerRadius;
+
+- (instancetype)initWithFrame:(NSRect)frameRect
+{
+    self = [super initWithFrame:frameRect];
+    if (self) {
+        self.wantsLayer = YES;
+        self.layer.backgroundColor = NSColor.clearColor.CGColor;
+    }
+    return self;
+}
+
+- (void)layout
+{
+    [super layout];
+
+    self.wantsLayer = YES;
+    self.layer.backgroundColor = NSColor.clearColor.CGColor;
+
+    CGPathRef path = status_island_bottom_rounded_path(self.bounds.size.width, self.bounds.size.height, _cornerRadius);
     self.layer.shadowPath = path;
     self.layer.shadowColor = NSColor.blackColor.CGColor;
     self.layer.shadowOpacity = 0.8f;
     self.layer.shadowRadius = 18.0f;
     self.layer.shadowOffset = CGSizeMake(0.0f, -7.0f);
-
     CGPathRelease(path);
-
-    [_island performSelector:@selector(layoutWings)];
 }
 @end
 
@@ -439,11 +473,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 @interface status_island : NSObject {
     uint32_t _did;
     status_island_panel *_panel;
+    status_island_panel *_shadow_panel;
     status_island_surface *_surface;
     status_island_wing *_workspace_wing;
     status_island_wing *_layout_wing;
     NSPanel *_workspace_menu;
+    NSPanel *_workspace_menu_shadow;
     NSPanel *_layout_menu;
+    NSPanel *_layout_menu_shadow;
     id _event_monitor;
     bool _collapsed;
     uint64_t _focused_sid;
@@ -480,10 +517,16 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     if (_event_monitor) [NSEvent removeMonitor:_event_monitor];
     [_workspace_menu close];
     [_workspace_menu release];
+    [_workspace_menu_shadow close];
+    [_workspace_menu_shadow release];
     [_layout_menu close];
     [_layout_menu release];
+    [_layout_menu_shadow close];
+    [_layout_menu_shadow release];
     [_panel close];
     [_panel release];
+    [_shadow_panel close];
+    [_shadow_panel release];
     [_space_items release];
     [super dealloc];
 }
@@ -504,17 +547,32 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     return _collapsed ? _notch_width : _workspace_wing_width + _notch_width + STATUS_ISLAND_LAYOUT_WING_WIDTH;
 }
 
-- (NSRect)panelFrame
+- (status_island_geometry)geometry
 {
-    CGFloat leftWing = _collapsed ? 0.0f : _workspace_wing_width;
-    CGFloat rightWing = _collapsed ? 0.0f : STATUS_ISLAND_LAYOUT_WING_WIDTH;
-    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
-    CGFloat notchLeft = _notch_center_x - _notch_width / 2.0f;
+    status_island_geometry g;
+    g.shadow_margin = STATUS_ISLAND_SHADOW_MARGIN;
+    g.island_height = STATUS_ISLAND_HEIGHT;
+    g.corner_radius = STATUS_ISLAND_CORNER_RADIUS;
+    g.layout_wing_width = STATUS_ISLAND_LAYOUT_WING_WIDTH;
+    g.notch_width = _notch_width;
+    g.notch_height = _notch_height;
+    g.notch_center_x = _notch_center_x;
+    g.screen_top_y = _screen_top_y;
+    g.workspace_wing_width = _workspace_wing_width;
+    g.collapsed = _collapsed;
+    return g;
+}
 
-    return NSMakeRect(notchLeft - leftWing - margin,
-                      _screen_top_y - (_notch_height + margin),
-                      leftWing + _notch_width + rightWing + 2.0f * margin,
-                      _notch_height + margin);
+// Tight input frame: the visible surface only. Shadow margins are excluded.
+- (NSRect)visibleFrame
+{
+    return NSRectFromCGRect(status_island_visible_frame([self geometry]));
+}
+
+// Expanded decoration frame used only by the mouse-transparent shadow panel.
+- (NSRect)shadowFrame
+{
+    return NSRectFromCGRect(status_island_shadow_frame([self geometry]));
 }
 
 - (CGFloat)workspaceWingWidthForName:(NSString *)name
@@ -568,11 +626,9 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     if (!_panel) {
     CGFloat width = [self islandWidth];
     CGFloat height = _notch_height;
-    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
 
-    NSRect frame = [self panelFrame];
-
-    _panel = [[status_island_panel alloc] initWithContentRect:frame
+    // Tight, mouse-interactive content panel: visible surface only, no shadow.
+    _panel = [[status_island_panel alloc] initWithContentRect:[self visibleFrame]
                                                     styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
                                                       backing:NSBackingStoreBuffered
                                                         defer:NO];
@@ -587,12 +643,12 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     _panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
     _panel.acceptsMouseMovedEvents = YES;
 
-    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, frame.size.width, frame.size.height)];
+    NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     container.wantsLayer = YES;
     _panel.contentView = container;
     [container release];
 
-    _surface = [[status_island_surface alloc] initWithFrame:NSMakeRect(margin, margin, width, height)];
+    _surface = [[status_island_surface alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
     _surface.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _surface.cornerRadius = STATUS_ISLAND_CORNER_RADIUS;
     _surface.island = self;
@@ -616,6 +672,37 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     [_layout_wing setSubText:@"LAYOUT"];
     [clipView addSubview:_layout_wing];
 
+    // Mouse-transparent decoration panel owns the shadow and never input.
+    NSRect shadowRect = [self shadowFrame];
+    _shadow_panel = [[status_island_panel alloc] initWithContentRect:shadowRect
+                                                           styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                             backing:NSBackingStoreBuffered
+                                                               defer:NO];
+    _shadow_panel.opaque = NO;
+    _shadow_panel.backgroundColor = NSColor.clearColor;
+    _shadow_panel.hasShadow = NO;
+    _shadow_panel.hidesOnDeactivate = NO;
+    _shadow_panel.releasedWhenClosed = NO;
+    _shadow_panel.ignoresMouseEvents = YES;
+    _shadow_panel.animationBehavior = NSWindowAnimationBehaviorNone;
+    _shadow_panel.level = NSStatusWindowLevel;
+    _shadow_panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
+
+    NSView *shadowContainer = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, shadowRect.size.width, shadowRect.size.height)];
+    shadowContainer.wantsLayer = YES;
+    _shadow_panel.contentView = shadowContainer;
+    [shadowContainer release];
+
+    status_island_shadow_surface *shadowSurface = [[status_island_shadow_surface alloc] initWithFrame:NSMakeRect(STATUS_ISLAND_SHADOW_MARGIN, STATUS_ISLAND_SHADOW_MARGIN, width, height)];
+    shadowSurface.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    shadowSurface.cornerRadius = STATUS_ISLAND_CORNER_RADIUS;
+    [shadowContainer addSubview:shadowSurface];
+    // Ensure the rounded shadowPath is present on first show; later resizes
+    // are handled by the autoresizing mask triggering layout.
+    [shadowSurface setNeedsLayout:YES];
+    [shadowSurface layoutSubtreeIfNeeded];
+    [shadowSurface release];
+
     [_surface release];
     [_workspace_wing release];
     [_layout_wing release];
@@ -623,12 +710,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
     [self applyFrameAnimated:NO];
     [self layoutWings];
+    [_shadow_panel orderFrontRegardless];
     [_panel orderFrontRegardless];
 }
 
 - (void)hide
 {
     [_panel orderOut:nil];
+    [_shadow_panel orderOut:nil];
 }
 
 - (void)layoutWings
@@ -644,16 +733,19 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     if (!_panel) return;
 
-    NSRect frame = [self panelFrame];
+    NSRect inputFrame = [self visibleFrame];
+    NSRect shadowRect = [self shadowFrame];
 
     if (animated) {
         [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
             context.duration = 0.2f;
             context.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
-            [[_panel animator] setFrame:frame display:YES];
+            [[_panel animator] setFrame:inputFrame display:YES];
+            [[_shadow_panel animator] setFrame:shadowRect display:YES];
         } completionHandler:nil];
     } else {
-        [_panel setFrame:frame display:YES];
+        [_panel setFrame:inputFrame display:YES];
+        [_shadow_panel setFrame:shadowRect display:YES];
     }
 }
 
@@ -661,12 +753,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     if (!_panel) return;
 
-    NSRect frame = [self panelFrame];
+    NSRect inputFrame = [self visibleFrame];
+    NSRect shadowRect = [self shadowFrame];
 
     [NSAnimationContext runAnimationGroup:^(NSAnimationContext *context) {
         context.duration = 0.32f;
         context.timingFunction = [CAMediaTimingFunction functionWithControlPoints:0.34f :1.56f :0.64f :1.0f];
-        [[_panel animator] setFrame:frame display:YES];
+        [[_panel animator] setFrame:inputFrame display:YES];
+        [[_shadow_panel animator] setFrame:shadowRect display:YES];
     } completionHandler:nil];
 }
 
@@ -689,7 +783,9 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 - (void)dismissMenus
 {
     if (_workspace_menu) [_workspace_menu orderOut:nil];
+    if (_workspace_menu_shadow) [_workspace_menu_shadow orderOut:nil];
     if (_layout_menu) [_layout_menu orderOut:nil];
+    if (_layout_menu_shadow) [_layout_menu_shadow orderOut:nil];
     if (_event_monitor) {
         [NSEvent removeMonitor:_event_monitor];
         _event_monitor = nil;
@@ -703,10 +799,20 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
         [_workspace_menu release];
         _workspace_menu = nil;
     }
+    if (_workspace_menu_shadow) {
+        [_workspace_menu_shadow close];
+        [_workspace_menu_shadow release];
+        _workspace_menu_shadow = nil;
+    }
     if (_layout_menu) {
         [_layout_menu close];
         [_layout_menu release];
         _layout_menu = nil;
+    }
+    if (_layout_menu_shadow) {
+        [_layout_menu_shadow close];
+        [_layout_menu_shadow release];
+        _layout_menu_shadow = nil;
     }
 }
 
@@ -724,13 +830,9 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     }];
 }
 
-- (NSPanel *)makeMenuPanelWithWidth:(CGFloat)width rowCount:(NSInteger)rowCount
+- (NSPanel *)makeMenuInputPanelWithWidth:(CGFloat)width height:(CGFloat)height
 {
-    CGFloat rowHeight = 30.0f;
-    CGFloat height = rowCount * rowHeight + 12.0f;
-    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
-
-    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
                                                 styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
                                                   backing:NSBackingStoreBuffered
                                                     defer:NO];
@@ -743,6 +845,35 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     panel.animationBehavior = NSWindowAnimationBehaviorNone;
     panel.level = NSStatusWindowLevel;
     panel.acceptsMouseMovedEvents = YES;
+    panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
+
+    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width, height)];
+    content.wantsLayer = YES;
+    content.layer.backgroundColor = [NSColor colorWithWhite:0.07f alpha:0.98f].CGColor;
+    content.layer.cornerRadius = 13.0f;
+    content.layer.masksToBounds = YES;
+    panel.contentView = content;
+    [content release];
+
+    return panel;
+}
+
+- (NSPanel *)makeMenuShadowPanelWithWidth:(CGFloat)width height:(CGFloat)height
+{
+    CGFloat margin = STATUS_ISLAND_SHADOW_MARGIN;
+
+    NSPanel *panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)
+                                                styleMask:NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel
+                                                  backing:NSBackingStoreBuffered
+                                                    defer:NO];
+    panel.opaque = NO;
+    panel.backgroundColor = NSColor.clearColor;
+    panel.hasShadow = NO;
+    panel.hidesOnDeactivate = NO;
+    panel.releasedWhenClosed = NO;
+    panel.ignoresMouseEvents = YES;
+    panel.animationBehavior = NSWindowAnimationBehaviorNone;
+    panel.level = NSStatusWindowLevel;
     panel.collectionBehavior = NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehaviorTransient | NSWindowCollectionBehaviorFullScreenAuxiliary;
 
     NSView *container = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, width + 2.0f * margin, height + margin)];
@@ -760,14 +891,6 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     panel.contentView = container;
     [container release];
 
-    NSView *content = [[NSView alloc] initWithFrame:NSMakeRect(margin, margin, width, height)];
-    content.wantsLayer = YES;
-    content.layer.backgroundColor = [NSColor colorWithWhite:0.07f alpha:0.98f].CGColor;
-    content.layer.cornerRadius = 13.0f;
-    content.layer.masksToBounds = YES;
-    [container addSubview:content];
-    [content release];
-
     return panel;
 }
 
@@ -780,8 +903,11 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     CGFloat rowHeight = 30.0f;
     CGFloat listWidth = 218.0f;
 
-    _workspace_menu = [self makeMenuPanelWithWidth:230.0f rowCount:(NSInteger)visibleRows];
-    NSView *content = [_workspace_menu.contentView.subviews objectAtIndex:0];
+    CGFloat menuWidth = 230.0f;
+    CGFloat menuHeight = visibleRows * rowHeight + 12.0f;
+    _workspace_menu = [self makeMenuInputPanelWithWidth:menuWidth height:menuHeight];
+    _workspace_menu_shadow = [self makeMenuShadowPanelWithWidth:menuWidth height:menuHeight];
+    NSView *content = _workspace_menu.contentView;
 
     NSView *listView = nil;
     if (count > visibleRows) {
@@ -819,8 +945,11 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     if (_layout_menu) return;
 
-    _layout_menu = [self makeMenuPanelWithWidth:150.0f rowCount:3];
-    NSView *content = [_layout_menu.contentView.subviews objectAtIndex:0];
+    CGFloat menuWidth = 150.0f;
+    CGFloat menuHeight = 3 * 30.0f + 12.0f;
+    _layout_menu = [self makeMenuInputPanelWithWidth:menuWidth height:menuHeight];
+    _layout_menu_shadow = [self makeMenuShadowPanelWithWidth:menuWidth height:menuHeight];
+    NSView *content = _layout_menu.contentView;
     CGFloat rowHeight = 30.0f;
     enum view_type layouts[] = { VIEW_BSP, VIEW_STACK, VIEW_FLOAT };
     for (int i = 0; i < 3; ++i) {
@@ -844,11 +973,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     [self dismissMenus];
     [self buildWorkspaceMenu];
 
-    NSRect islandFrame = _panel.frame;
+    NSRect islandFrame = [self visibleFrame];
     NSRect menuFrame = _workspace_menu.frame;
     menuFrame.origin.x = islandFrame.origin.x;
-    menuFrame.origin.y = islandFrame.origin.y + STATUS_ISLAND_SHADOW_MARGIN - menuFrame.size.height - 6.0f;
+    menuFrame.origin.y = islandFrame.origin.y - menuFrame.size.height - 6.0f;
     [_workspace_menu setFrame:menuFrame display:NO];
+    [_workspace_menu_shadow setFrameOrigin:NSMakePoint(menuFrame.origin.x - STATUS_ISLAND_SHADOW_MARGIN,
+                                                        menuFrame.origin.y - STATUS_ISLAND_SHADOW_MARGIN)];
+    [_workspace_menu_shadow orderFrontRegardless];
     [_workspace_menu orderFrontRegardless];
     [self addOutsideClickMonitor];
 }
@@ -862,11 +994,14 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     [self dismissMenus];
     [self buildLayoutMenu];
 
-    NSRect islandFrame = _panel.frame;
+    NSRect islandFrame = [self visibleFrame];
     NSRect menuFrame = _layout_menu.frame;
     menuFrame.origin.x = islandFrame.origin.x + islandFrame.size.width - menuFrame.size.width;
-    menuFrame.origin.y = islandFrame.origin.y + STATUS_ISLAND_SHADOW_MARGIN - menuFrame.size.height - 6.0f;
+    menuFrame.origin.y = islandFrame.origin.y - menuFrame.size.height - 6.0f;
     [_layout_menu setFrame:menuFrame display:NO];
+    [_layout_menu_shadow setFrameOrigin:NSMakePoint(menuFrame.origin.x - STATUS_ISLAND_SHADOW_MARGIN,
+                                                     menuFrame.origin.y - STATUS_ISLAND_SHADOW_MARGIN)];
+    [_layout_menu_shadow orderFrontRegardless];
     [_layout_menu orderFrontRegardless];
     [self addOutsideClickMonitor];
 }
@@ -1022,6 +1157,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     }
 
     [self invalidateMenus];
+    [_shadow_panel orderFrontRegardless];
     [_panel orderFrontRegardless];
 }
 
@@ -1033,12 +1169,12 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
     bool on_display = mouse.x >= NSMinX(screen_frame) && mouse.x < NSMaxX(screen_frame) &&
                       mouse.y >= NSMinY(screen_frame) && mouse.y <= NSMaxY(screen_frame);
 
-    NSRect island_frame = _panel.frame;
-    bool over_island = mouse.x >= NSMinX(island_frame) && mouse.x <= NSMaxX(island_frame) &&
-                       mouse.y >= NSMinY(island_frame) && mouse.y <= NSMaxY(island_frame);
+    status_island_geometry g = [self geometry];
+    CGPoint point = NSPointToCGPoint(mouse);
+    bool over_island = status_island_point_in_visible_surface(point, g);
     bool over_menu = (_workspace_menu && _workspace_menu.visible && NSPointInRect(mouse, _workspace_menu.frame)) ||
                      (_layout_menu && _layout_menu.visible && NSPointInRect(mouse, _layout_menu.frame));
-    bool in_island_band = mouse.y >= _screen_top_y - _notch_height && mouse.y <= _screen_top_y;
+    bool in_island_band = status_island_point_in_top_band(point, g);
 
     bool collapsed = on_display && in_island_band && !over_island && !over_menu;
     [self setCollapsed:collapsed];
@@ -1048,6 +1184,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 @interface status_island_controller : NSObject {
     NSMutableDictionary *_islands;
     id _mouse_monitor;
+    id _local_mouse_monitor;
 }
 + (instancetype)sharedController;
 - (void)refreshWithSnapshot:(struct space_workflow_snapshot *)snapshot;
@@ -1083,6 +1220,7 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 {
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     if (_mouse_monitor) [NSEvent removeMonitor:_mouse_monitor];
+    if (_local_mouse_monitor) [NSEvent removeMonitor:_local_mouse_monitor];
     [_islands release];
     [super dealloc];
 }
@@ -1131,11 +1269,22 @@ static CGPathRef status_island_bottom_rounded_path(CGFloat width, CGFloat height
 
 - (void)addMouseMonitor
 {
-    if (_mouse_monitor) return;
-    _mouse_monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged
-                                                            handler:^(NSEvent *__unused event) {
-        [self updateCollapsedForMouse];
-    }];
+    if (!_mouse_monitor) {
+        _mouse_monitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged
+                                                                handler:^(NSEvent *__unused event) {
+            [self updateCollapsedForMouse];
+        }];
+    }
+
+    // Global monitors do not observe events delivered to this process, so a
+    // non-consuming local monitor covers entry into/exit from island windows.
+    if (!_local_mouse_monitor) {
+        _local_mouse_monitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskMouseMoved | NSEventMaskLeftMouseDragged | NSEventMaskRightMouseDragged
+                                                                     handler:^(NSEvent *event) {
+            [self updateCollapsedForMouse];
+            return event;
+        }];
+    }
 }
 
 - (void)updateCollapsedForMouse
